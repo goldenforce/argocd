@@ -1,0 +1,28 @@
+{
+	"auth":
+	{
+		"type": "OAUTH2",
+		"securityRealm": "${edm_environment}",
+		"bindingUrl": "https://${KUBE_EXTERNAL_LB}/auth/",
+		"clientId": "Flowstudio",
+		"serviceAccountUser": "${Service_Account_User}",
+		"ServiceAccountPassword": "${Service_Account_Password}",
+		"clientSecret": "${Keycloak_client_secret}",
+		"grantType": "password",
+		"secureApp":true
+	},
+    "orchestrators": [
+  		
+
+	{ 
+		"connectionName": "Fileloading",
+		"baseEndpoint": "https://${KUBE_EXTERNAL_LB}/fileloading/"
+	}
+,
+	{ 
+		"connectionName": "Publishing",
+		"baseEndpoint": "https://${KUBE_EXTERNAL_LB}/publishing/"
+	}
+
+    ]   
+}

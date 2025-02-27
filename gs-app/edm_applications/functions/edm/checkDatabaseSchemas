@@ -1,0 +1,49 @@
+## Check  Database/Schemas
+checkDatabaseSchemas()
+{
+	### Initialize
+	initializeDatabase
+	echoLog "INFO" "Job - $(hostname) - Image - Repository - ${application_image}" "Check  Database/Schemas" "True" | tee -a ${checkDatabaseSchemasLogFile}
+
+	### JDBC Url
+	jdbcUrl="jdbc:${database_connection_provider}${Database_Host}:${Database_Port}/${Database_Service}${SSL_Url}"
+
+	## Get All schemas and check Connectivity
+	completedCount=0
+	failedCount=0
+	for schema in $databaseSchemaDetails 
+	do
+		getDatabaseSchemaOwnerUsersDetails ${schema}
+
+		### Jar
+		jarName=`ls /ext/app/dbTools/${database_connection_jar}*.jar`
+
+		### Verify schema access (Owner)
+		checkDatabaseSchemasLogFileError="${checkDatabaseSchemasWorkFolder}/work/checkDatabaseSchemas-${gemSchemaOwner}.err"
+		executeCommandAndCheckError "java -cp /ext/app/dbTools/DBConnectionTest.jar:${jarName} SSLDBTest \"$jdbcUrl\" ${gemSchemaOwner} ${gemSchemaOwnerPassword} $SSL_Argument_Inst_CLI >> ${checkDatabaseSchemasLogFileError} 2>>${checkDatabaseSchemasLogFileError}" "Check  Database/Schemas" "Schema Verify - ${gemSchemaOwner}" "${checkDatabaseSchemasLogFile}" "checkDatabaseSchemasLogFileError" "true"
+		if [ "${executeCommandAndCheckErrorStatus}" == "Completed" ]; then
+			((completedCount += 1))
+		else
+			((failedCount += 1))
+		fi
+
+		### Verify schema access (User)
+		checkDatabaseSchemasLogFileError="${checkDatabaseSchemasWorkFolder}/work/checkDatabaseSchemas-${gemSchemaUser}.err"
+		executeCommandAndCheckError "java -cp /ext/app/dbTools/DBConnectionTest.jar:${jarName} SSLDBTest \"$jdbcUrl\" ${gemSchemaUser} ${gemSchemaUserPassword} $SSL_Argument_Inst_CLI >> ${checkDatabaseSchemasLogFileError} 2>>${checkDatabaseSchemasLogFileError}" "Check  Database/Schemas" "Schema Verify - ${gemSchemaUser}" "${checkDatabaseSchemasLogFile}" "checkDatabaseSchemasLogFileError" "true"
+		if [ "${executeCommandAndCheckErrorStatus}" == "Completed" ]; then
+			((completedCount += 1))
+		else
+			((failedCount += 1))
+		fi
+	done
+	
+	### Final process
+	checkDatabaseSchemasStatus="Failed"
+	configurePlatformStateSetTaskStatus="Failed"
+	if [[ ${completedCount} -gt 0 && ${failedCount} -eq 0 ]]; then
+		checkDatabaseSchemasStatus="Completed"
+	fi
+
+	### Process Platform State
+	configurePlatformStateSetTask "checkDatabaseSchemas" "${edm_version}" "${checkDatabaseSchemasStatus}"
+}

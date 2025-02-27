@@ -1,0 +1,221 @@
+### Function Execute Workflow
+function execWkf() 
+{
+	now=`date -u '+%Y%m%d_%H%M'`
+	execWkfStartTime=$(date +%s)
+
+	retval=0
+	
+    execWkfLog $1 $2 $3
+	if [ "${execWkfLogStatus}" == "Failed" ]; then
+		return
+	fi
+	
+	paramCheck $# 4 4
+	if [ "${paramCheckStatus}" == "Failed" ]; then
+		return
+	fi
+	
+	initialize
+	envTypCheck $env_type
+	if [ "${envTypCheckStatus}" == "Failed" ]; then
+		return
+	fi
+	
+	env_verify=$(env | egrep 'KUBERNETES_NAMESPACE')
+	envVerifyCheck $env_verify $env_type $file
+	
+	setTargetApplicationURL "$4" "$env_type" "true"
+	authTypCheck $auth_type
+	if [ "${authTypCheckStatus}" == "Failed" ]; then
+		return
+	fi
+	
+	http_response=$(curl --insecure -u $Service_Account_User:$Service_Account_Password -s -o /dev/null -w "%{http_code}" $final_url_application)
+	responseCodeCheck $http_response $auth_type $file
+	if [ "${responseCodeCheckStatus}" == "Failed" ]; then
+		return
+	fi
+	
+	setTargetApplicationURL "$4" "$env_type" "true"
+	checkApplicationReachabilityWrapper $auth_type $final_url_keycloak $final_url_application $Service_Account_User $Service_Account_Password
+	
+	echoLog "INFO" "Workflow - Execution - Started" "Job ${job_name}" >>$job_log
+	
+	client_id=${4,,}
+	client_id=${client_id^}Startup
+	if [[ "${auth_type,,}" == "oauth" ]]; then
+		getAccessToken "$final_url_keycloak/realms/$edm_environment/protocol/openid-connect/token" "$Service_Account_User" "$Service_Account_Password" "$client_id" "$Keycloak_client_secret"
+		if [ -z $token_expiry_time ]; then
+			token_expiry_time=0
+		fi
+		getEvent $final_url_application $3 $access_token
+		if [[ -z $event_details ]]; then
+			echo "ERROR - Workflow $3 Event not defined/Permission issue"
+			echo "ERROR - Workflow $3 Event not defined/Permission issue $(date +'%d-%b-%Y %T')"
+			echoLog "ERROR" "Workflow - Event/Permission - Failed" "Job ${job_name}" >>$job_log
+			return
+		fi
+		execWkfInitialize $final_url_application $3 $access_token $2
+		if [ "${execWkfInitializeStatus}" == "Failed" ]; then
+			return
+		fi
+
+		identifierCheck $final_url_application $access_token "$identifier"
+		if [ "${identifierCheckStatus}" == "Failed" ]; then
+			return
+		fi
+
+		if [ ! -z "$identifier" ]; then
+			if [[ "$identifier" == *message* || "$identifier" == *Error* || "$identifier" == *invalid* || "$identifier" == *Issue* || "$identifier" == *down* ]]; then
+				echo "ERROR - Input paramaters/Permissions"
+				echo "ERROR - Input paramaters/Permissions $(date +'%d-%b-%Y %T')"
+				echoLog "ERROR" "Workflow - Parameters/Permission - Failed" "Job ${job_name}" >>$job_log
+				return
+			fi
+		elif [ -z "$identifier" ]; then
+			echo "ERROR - Identifier Empty"
+			echo "ERROR - Identifier Empty $(date +'%d-%b-%Y %T')"
+			echoLog "ERROR" "Workflow - Identifier Empty - Failed" "Job ${job_name}" >>$job_log
+			return
+		fi
+
+		echo "INFO - Identifier - $identifier"
+		echo "INFO - Identifier - $identifier $(date +'%d-%b-%Y %T')"
+		echoLog "INFO" "Workflow - Identifier $identifier - Started" "Job ${job_name}" "True" >>$job_log
+		mv $job_log $job_log.$identifier
+		job_log=$job_log.$identifier
+		startSpinner 'Workflow has been triggered - Running State...'
+		wkfStatusCheck $final_url_application $identifier $access_token $token_expiry_time $final_url_keycloak $client_id $runtime $endtime
+		stopSpinner $?
+		retval=$?
+		returnCodeCheck $retval
+	elif [[ "${auth_type,,}" == "basic" ]]; then
+		getAccessTokenBasic "$Service_Account_User" "$Service_Account_Password"
+		getEventBasic $final_url_application $3 $access_token
+		if [[ -z $event_details ]]; then
+			echo "ERROR - Workflow $3 Event not defined/Permission issue"
+			echo "ERROR - Workflow $3 Event not defined/Permission issue $(date +'%d-%b-%Y %T')"
+			echoLog "ERROR" "Workflow - Event/Permission - Failed" "Job ${job_name}" >>$job_log
+			return
+		fi
+		execWkfBasic $final_url_application $3 $access_token $2
+		if [ "${execWkfBasicStatus}" == "Failed" ]; then
+			return
+		fi
+
+		identifierCheck $final_url_application $access_token "$identifier"
+		if [ "${identifierCheckStatus}" == "Failed" ]; then
+			return
+		fi
+
+		if [ ! -z "$identifier" ]; then
+			if [[ "$identifier" == *message* || "$identifier" == *Error* || "$identifier" == *invalid* || "$identifier" == *Issue* || "$identifier" == *down* ]]; then
+				echo "ERROR - Input paramaters/Permissions $identifier"
+				echo "ERROR - Input paramaters/Permissions $identifier $(date +'%d-%b-%Y %T')"
+				echoLog "ERROR" "Workflow - Parameters/Permission - Failed" "Job ${job_name}" >>$job_log
+				return
+			fi
+		elif [ -z "$identifier" ]; then
+			echo "ERROR - Identifier Empty"
+			echo "ERROR - Identifier Empty $(date +'%d-%b-%Y %T')"
+			echoLog "ERROR" "Workflow - Identifier Empty - Failed" "Job ${job_name}" >>$job_log
+			return
+		fi
+
+		echo "INFO - Identifier - $identifier"
+		echo "INFO - Identifier - $identifier $(date +'%d-%b-%Y %T')"
+		echoLog "INFO" "Workflow - Identifier $identifier - Started" "Job ${job_name}" "True" >>$job_log
+		startSpinner 'Workflow has been triggered and is in Running State..!'
+		wkfStatusCheckBasic $final_url_application $identifier $access_token $runtime $endtime
+		stopSpinner $?
+		retval=$?
+		returnCodeCheck $retval
+	else
+		echo "ERROR - Authentication"
+		echo "ERROR - Authentication $(date +'%d-%b-%Y %T')"
+		echoLog "ERROR" "Workflow - Authentication - Failed" "Job ${job_name}" >>$job_log
+		return
+	fi
+
+	computeElapsedTime ${execWkfStartTime}
+	echo "Total - Elapsed Time ${elapsedTimeTaken}"
+	echoLog "INFO" "Workflow - Execution - Completed - ${elapsedTimeTaken}" "Job ${job_name}" >>$job_log
+	return $retval
+}
+function execWkfInitialize() 
+{
+	execWkfInitializeStatus="Failed"
+	param_file="/tmp/${2}.$(date +%s).${RANDOM}.json"
+	jq . ${4} >$param_file
+
+	if [ ! -f "$param_file" ]; then
+		echoLog "ERROR" "Workflow - Parameter File - Failed" "Job ${job_name}" >>$job_log
+		return
+	fi
+
+	if [ ! -s "$param_file" ]; then
+		echoLog "ERROR" "Workflow - Parameter File - Failed" "Job ${job_name}" >>$job_log
+		return
+	fi
+
+	identifier=$(curl -s -X POST --insecure -H -i ${1}event/${2}?Asynch=true -H 'authorization: Bearer '${3}'' -H 'content-type: application/json' -d @${param_file})
+	rm -rf "$param_file"
+	execWkfInitializeStatus="Completed"
+}
+
+function execWkfBasic() 
+{
+	execWkfBasicStatus="Failed"
+	param_file="/tmp/${2}.$(date +%s).${RANDOM}.json"
+	jq . ${4} >$param_file
+
+	if [ ! -f "$param_file" ]; then
+		echoLog "ERROR" "Workflow - Parameter File - Failed" "Job ${job_name}" >>$job_log
+		return
+	fi
+
+	if [ ! -s "$param_file" ]; then
+		echoLog "ERROR" "Workflow - Parameter File - Failed" "Job ${job_name}" >>$job_log
+		return
+	fi
+
+	identifier=$(curl -s -X POST --insecure -H -i ${1}event/${2}?Asynch=true -H 'authorization: Basic '${3}'' -H 'content-type: application/json' -d @${param_file})
+	rm -rf "$param_file"
+	execWkfBasicStatus="Completed"
+}
+
+function execWkfLog() 
+{
+	execWkfLogStatus="Failed"
+	if [[ "$1" == "execWkf" ]]; then
+		job_name="${2##*/}"
+		job_name="${job_name%.*}"
+		mkdir -p /${logs_home}/logs/UtilityApplications/Jobutility/$(date +"%Y-%m-%d")
+		touch /${logs_home}/logs/UtilityApplications/Jobutility/$(date +"%Y-%m-%d")/$job_name"_"$(date +"%H-%M-%S").log
+		job_log=/${logs_home}/logs/UtilityApplications/Jobutility/$(date +"%Y-%m-%d")/$job_name"_"$(date +"%H-%M-%S").log
+		
+		if [ -f "$2" ]; then
+			echo "INFO - Parameter - $(cat $2)"
+			echo "INFO - Parameter - $(cat $2) $(date +'%d-%b-%Y %T')"
+			echoLog "INFO" "Workflow - Parameter - $(cat $2)" "Job ${job_name}" >>$job_log
+		else
+			echoLog "ERROR" "Workflow - Parameter File - Failed" "Job ${job_name}" >>$job_log
+			return
+		fi
+	elif [[ "$1" == "execWkf_inputParam" ]]; then
+		job_name="${3}"
+		mkdir -p /${logs_home}/logs/UtilityApplications/Jobutility/$(date +"%Y-%m-%d")
+		job_log=$(echo /${logs_home}/logs/UtilityApplications/Jobutility/$(date +"%Y-%m-%d")/$job_name"_inputParam_"$(date +"%H-%M-%S")_${RANDOM}.log)
+		touch $job_log
+		echo "INFO - Parameter - $2"
+		echo "INFO - Parameter - $2 $(date +'%d-%b-%Y %T')"
+		echoLog "INFO" "Workflow - Parameter - $2" "Job ${job_name}" >>$job_log
+	else
+		job_name="${2}"
+		mkdir -p /${logs_home}/logs/UtilityApplications/Jobutility/$(date +"%Y-%m-%d")
+		job_log=$(echo /${logs_home}/logs/UtilityApplications/Jobutility/$(date +"%Y-%m-%d")/$job_name"_"$(date +"%H-%M-%S")_${RANDOM}.log)
+		touch $job_log
+	fi
+	execWkfLogStatus="Completed"
+}

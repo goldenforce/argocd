@@ -1,0 +1,175 @@
+### Platform Set Task
+function configurePlatformStateSetTask()
+{
+	### Initialize
+	platformStateTask=$1
+	platformStateTaskVersion=$2
+	platformStateTaskStatus=$3
+	configurePlatformStateSetTaskStatus="Failed"
+	
+	### Work folder
+	configurePlatformStateSetTaskLogFile="${configurePlatformstateFolder}/work/platformStateSet-${platformStateTask}.log"
+	configurePlatformStateSetTaskLogFileError="${configurePlatformstateFolder}/work/platformStateSet-${platformStateTask}.err"
+
+	### Query
+	configurePlatformStateSetTaskSQL="MERGE INTO ft_d_pflc dest USING ( "
+	configurePlatformStateSetTaskSQL+="SELECT '${platformStateTask}' AS TASK, '${platformStateTaskVersion}' AS TASK_VERSION, '${platformStateTaskStatus}' " 
+	configurePlatformStateSetTaskSQL+="AS TASK_STATUS FROM dual " 
+	configurePlatformStateSetTaskSQL+=") src "
+	configurePlatformStateSetTaskSQL+="ON (dest.TASK = src.TASK) " 
+	configurePlatformStateSetTaskSQL+="WHEN MATCHED THEN UPDATE SET dest.TASK_VERSION = src.TASK_VERSION, dest.TASK_STATUS = src.TASK_STATUS "
+	configurePlatformStateSetTaskSQL+="WHEN NOT MATCHED THEN INSERT (TASK, TASK_VERSION, TASK_STATUS) VALUES "
+	configurePlatformStateSetTaskSQL+="(src.TASK, src.TASK_VERSION, src.TASK_STATUS)"
+	echo ${configurePlatformStateSetTaskSQL} >> "${configurePlatformstateFolder}/work/platformStateSet-${platformStateTask}.sql"
+
+	### Execute
+	__configurePlatformStateExecute "${platformStateTask}" "setTask" "${configurePlatformStateSetTaskSQL}" "True"
+	configurePlatformStateSetTaskStatus=${configurePlatformStateExecuteStatus}
+}
+
+### Get all columns
+function configurePlatformStateGetTask()
+{
+	### Initialize
+	platformStateTask=$1
+	configurePlatformStateGetTaskStatus="Failed"
+	configurePlatformStateGetTaskResult="None"
+	
+	### Work folder
+	configurePlatformStateGetTaskLogFile="${configurePlatformstateFolder}/work/platformStateGet-${platformStateTask}.log"
+	configurePlatformStateGetTaskLogFileError="${configurePlatformstateFolder}/work/platformStateGet-${platformStateTask}.err"
+
+	### Query
+	configurePlatformStateGetTaskSQL="SELECT TASK, TASK_VERSION, TASK_STATUS FROM ft_d_pflc "
+	configurePlatformStateGetTaskSQL+=" WHERE TASK = '"${platformStateTask}"'" 
+
+	### Execute
+	__configurePlatformStateExecute "${platformStateTask}" "getTask" "${configurePlatformStateGetTaskSQL}" "True"
+	configurePlatformStateGetTaskStatus=${configurePlatformStateExecuteStatus}
+
+	### Get Status	
+	if [ "${configurePlatformStateGetTaskStatus}" == "Completed" ]; then
+		while read -r line; 
+		do
+			processName=`echo $line | cut -d "|" -f 1 | xargs` 
+			if [ ! "${processName,,}" == "task" ]; then
+				processVersion=`echo $line | cut -d "|" -f 2 | xargs`
+				processStatus=`echo $line | cut -d "|" -f 3 | xargs`
+				configurePlatformStateGetTaskResult="${processName}|${processVersion}|${processStatus}"
+				break
+			fi
+		done <${configurePlatformStateExecuteLogFile}
+	fi
+}
+
+### Get Version
+function configurePlatformStateGetVersion()
+{
+	### Initialize
+	platformStateTask="$1"
+	platformStateVersion="$2"
+	processStatus="Failed"
+	
+	### Work folder
+	configurePlatformStateGetLogFile="${configurePlatformstateFolder}/work/platformStateGet-${platformStateTask}.log"
+	configurePlatformStateGetLogFileError="${configurePlatformstateFolder}/work/platformStateGet-${platformStateTask}.err"
+
+	### Query
+	configurePlatformStateGetSQL="SELECT TASK, TASK_VERSION, TASK_STATUS FROM ft_d_pflc "
+	if [ -z "$platformStateVersion" ]; then
+		configurePlatformStateGetSQL+=" WHERE TASK = '"${platformStateTask}"'"
+	else
+		configurePlatformStateGetSQL+=" WHERE TASK = '"${platformStateTask}"' AND TASK_VERSION = '"${platformStateVersion}"'"
+	fi 
+
+	### Execute
+	__configurePlatformStateExecute "${platformStateTask}" "getStatus" "${configurePlatformStateGetSQL}" "False"
+
+	### Get Status	
+	if [ "${configurePlatformStateExecuteStatus}" == "Completed" ]; then
+		while read -r line; 
+		do
+			processName=`echo $line | cut -d "|" -f 1 | xargs` 
+			if [ ! "${processName,,}" == "task" ]; then
+				processVersion=`echo $line | cut -d "|" -f 2 | xargs`
+				break
+			fi
+		done <${configurePlatformStateExecuteLogFile}
+	fi
+	echo "${processVersion}"
+}
+
+### Get Status
+function configurePlatformStateGetStatus()
+{
+	### Initialize
+	platformStateTask="$1"
+	platformStateVersion="$2"
+	processStatus="Failed"
+	
+	### Work folder
+	configurePlatformStateGetLogFile="${configurePlatformstateFolder}/work/platformStateGet-${platformStateTask}.log"
+	configurePlatformStateGetLogFileError="${configurePlatformstateFolder}/work/platformStateGet-${platformStateTask}.err"
+
+	### Query
+	configurePlatformStateGetSQL="SELECT TASK, TASK_VERSION, TASK_STATUS FROM ft_d_pflc "
+	if [ -z "$platformStateVersion" ]; then
+		configurePlatformStateGetSQL+=" WHERE TASK = '"${platformStateTask}"'"
+	else
+		configurePlatformStateGetSQL+=" WHERE TASK = '"${platformStateTask}"' AND TASK_VERSION = '"${platformStateVersion}"'"
+	fi 
+
+	### Execute
+	__configurePlatformStateExecute "${platformStateTask}" "getStatus" "${configurePlatformStateGetSQL}" "False"
+
+	### Get Status	
+	if [ "${configurePlatformStateExecuteStatus}" == "Completed" ]; then
+		while read -r line; 
+		do
+			processName=`echo $line | cut -d "|" -f 1 | xargs`
+			if [ ! "${processName,,}" == "task" ]; then
+				processStatus=`echo $line | cut -d "|" -f 3 | xargs`
+				break
+			fi
+		done <${configurePlatformStateExecuteLogFile}
+	fi
+	echo "${processStatus}"
+}
+
+
+### Common Executor
+function __configurePlatformStateExecute()
+{
+	### Initialize
+	platformStateTask=$1
+	platformStateMethod=$2
+	configurePlatformStateExecuteSQL=$3
+	configurePlatformStateExecutePrintLog=$4
+	configurePlatformStateLogFile="${configurePlatformstateFolder}/configurePlatformState.log"
+	configurePlatformStateExecuteLogFile="${configurePlatformstateFolder}/work/platformState-${platformStateMethod}-${platformStateTask}.log"
+	configurePlatformStateExecuteStatus="Failed"
+
+	## JDBC Url
+	initializeDatabase
+	JDBC_Url="jdbc:${database_connection_provider}${Database_Host}:${Database_Port}/${Database_Service}?autosave=conservative${SSL_Argument_JDBC}"
+	
+	### Execute
+	cd /ext/app/dbTools
+	jarName=`ls /ext/app/dbTools/${database_connection_jar}*.jar`
+	java -cp jdbcquery.jar:${jarName}  Main ${JDBC_Url} ${GEMSchemaUser_PLATFORMSTATE} ${GEMSchemaUserPassword_PLATFORMSTATE} "${configurePlatformStateExecuteSQL}" > ${configurePlatformStateExecuteLogFile}  2>>${configurePlatformStateExecuteLogFile}
+
+	### Check Error
+	if grep -i "ERROR" "${configurePlatformStateExecuteLogFile}" || grep -i "Query execution failed" "${configurePlatformStateExecuteLogFile}"; then
+		configurePlatformStateExecuteLogFileErrorRename=`echo "${configurePlatformStateExecuteLogFile/.log/.err}"`
+		mv "${configurePlatformStateExecuteLogFile}" "${configurePlatformStateExecuteLogFileErrorRename}" 2>/dev/null
+		if [ "${configurePlatformStateExecutePrintLog}" == "True" ]; then
+			echoLog "ERROR" "${platformStateTask} - Failed" "Platform State" | tee -a ${configurePlatformStateLogFile}
+		fi
+	else
+		if [ "${configurePlatformStateExecutePrintLog}" == "True" ]; then
+			echoLog "INFO" "${platformStateTask} - Completed" "Platform State" | tee -a ${configurePlatformStateLogFile}
+		fi
+		configurePlatformStateExecuteStatus="Completed"
+	fi
+
+}

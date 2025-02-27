@@ -1,0 +1,29 @@
+### Assign RDS Endpoint
+function rdsEndpoint()
+{
+	### Initialize
+	rdsEndpointWorkFolder="$1"
+	rdsEndpointStatus="Failed"
+	
+	### Get Kubernetes Token
+	kubeToken=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
+	rdsApiEndpointDatabaseUrl="https://${KUBERNETES_SERVICE_HOST}:${KUBERNETES_PORT_443_TCP_PORT}/api/v1/namespaces/${KUBERNETES_NAMESPACE}/endpoints/database"
+	
+	### Get RDS Host
+	rdsHost="${DatabaseHost_Schema_GC}"
+	rdsPort="${DatabasePort_Schema_GC}"
+	rdsEndpointFound=`getent hosts ${rdsHost} | awk '{ print $1 }'`
+	
+	### Get assigned Endpoint
+	rdsEndpointAssigned=`curl -sSk -H "Authorization: Bearer $kubeToken" ${rdsApiEndpointDatabaseUrl} | jq -r '.subsets[].addresses[].ip'`
+	
+	if [ "${rdsEndpointFound}" != "${rdsEndpointAssigned}" ]; then
+		rdsSubset="{\"subsets\": [{\"addresses\": [{\"ip\": \"${rdsEndpointFound}\"}], \"ports\": [{\"port\": ${rdsPort}}]}]}"
+		curl -k  --request PATCH \
+			--header "Authorization: Bearer $kubeToken" \
+			--header "Content-Type: application/strategic-merge-patch+json" \
+			--data "${rdsSubset}" \
+			${rdsApiEndpointDatabaseUrl} > ${rdsEndpointWorkFolder}/rdsEndpointCurl.log
+		rdsEndpointStatus="Completed"
+	fi
+}

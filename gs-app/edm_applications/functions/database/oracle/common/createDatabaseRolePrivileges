@@ -1,0 +1,36 @@
+### Create Role Privileges
+function createDatabaseRolePrivileges()
+{
+	### Create Role Privileges
+	roleName="$1"
+	schema="$2"
+	createRolePrivilegesWorkFolder="$3"
+	tableSpace="$4"
+	
+	createDatabaseRolePrivilegesSQLFile="${createRolePrivilegesWorkFolder}/createRolePrivileges-${roleName}.sql"
+	createDatabaseRolePrivilegesSQLError="${createRolePrivilegesWorkFolder}/createRolePrivileges-${roleName}.err"
+
+	### Create Schema SQL
+	cat > ${createDatabaseRolePrivilegesSQLFile} <<- EOM
+		SET SERVEROUTPUT ON
+		BEGIN
+			EXECUTE IMMEDIATE 'GRANT CREATE SEQUENCE, CREATE TABLE, CREATE SYNONYM TO GS_REP_ROLE';
+			EXECUTE IMMEDIATE 'GRANT GS_REP_ROLE TO ${roleName}';
+			EXECUTE IMMEDIATE 'GRANT GS_APP_REP_ROLE TO ${roleName}';
+			EXECUTE IMMEDIATE 'GRANT GS_GC_ROLE TO ${roleName}';
+			EXECUTE IMMEDIATE 'GRANT GS_GC_RUNTIME_ROLE TO ${roleName}';
+			EXECUTE IMMEDIATE 'GRANT ${roleName}_RW_RLE TO ${roleName} with admin option';
+			EXECUTE IMMEDIATE 'GRANT CREATE SESSION, CREATE TABLE, CREATE SYNONYM TO ${roleName}';
+			EXECUTE IMMEDIATE 'GRANT EXECUTE ON DBMS_LOCK TO ${roleName}';
+			EXECUTE IMMEDIATE 'GRANT EXECUTE ON DBMS_LOCK TO ${roleName}';
+			EXECUTE IMMEDIATE 'ALTER USER ${roleName} QUOTA UNLIMITED ON ${tableSpace}';
+		EXCEPTION
+			WHEN OTHERS THEN
+				DBMS_OUTPUT.PUT_LINE('Error: ' || SQLERRM);
+		END;
+		/
+		exit;
+	EOM
+	export ORAPASSWORD=${Database_Owner_Password}
+	sqlplus ${Database_Owner_User}/${Database_Owner_Password}@${DatabaseName_Schema_GC} @${createDatabaseRolePrivilegesSQLFile} > ${createDatabaseRolePrivilegesSQLError} 2>>${createDatabaseRolePrivilegesSQLError}
+}

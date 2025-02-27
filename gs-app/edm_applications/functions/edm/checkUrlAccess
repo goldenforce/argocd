@@ -1,0 +1,83 @@
+### Curl status
+function checkCurlStatus()
+{
+	curlUrl=$1
+	curlFilter=$2
+	curlStatus="False"
+	sleepInitTime=0
+	sleepMaxTime=180
+	if [[ ! -z "$curlSleepTime" ]]; then
+		sleepMaxTime=$curlSleepTime
+	fi
+	while true;
+	do
+		curlStatusCount=`eval $curlUrl $curlFilter`
+		if [ $curlStatusCount -gt 0 ]; then
+			curlStatus="True"
+			break
+		fi
+		if [ $sleepInitTime -gt $sleepMaxTime ]; then
+			break
+		fi
+		((sleepInitTime += 5))
+		sleep 5
+	done
+}
+
+### Check if Elasticsearch accessible
+function checkIfElasticsearchAccessible()
+{
+	checkCurlStatus 'curl ${cerfificate_curl_options} --max-time 1 -LIs http://${KUBE_INTERNAL_LB_elastic}:${ELASTICSEARCH_MASTER_SERVICE_PORT}' '| grep -i HTTP | grep "200" | wc -l'  
+	echo "$curlStatus"
+}
+
+### Check if Selenium accessible
+function checkIfSeleniumAccessible()
+  {
+     checkCurlStatus 'curl ${cerfificate_curl_options} --max-time 1 -LIs http://${SELENIUM_HUB_SERVICE_HOST}:${SELENIUM_HUB_SERVICE_PORT}/status' '| grep -i HTTP | grep "200" | wc -l'
+     if [ "$curlStatus" == "True" ]; then
+        checkCurlStatus 'curl http://${SELENIUM_HUB_SERVICE_HOST}:${SELENIUM_HUB_SERVICE_PORT}/status' '| grep "\"message\": \"Selenium Grid ready.\"" | wc -l'
+     fi
+     echo "$curlStatus"
+  }
+
+### Check if Keycloak accessible
+function checkIfKeycloakAccessible()
+{
+	curlSleepTime="1800"
+	checkCurlStatus 'curl -X GET ${cerfificate_curl_options} --max-time 1 -LIs https://${KUBE_EXTERNAL_LB}/auth/' '| grep -i HTTP | grep "200" | wc -l'
+	#if [ "${edm_load_balancer}" == "nlb" ]; then
+	#   sleep 600
+	#fi  
+	echo "$curlStatus"
+}
+
+### Check if Jboss (Workstation) running
+function checkIfWorkstationAccessible()
+{
+	curlSleepTime="1800"
+	checkCurlStatus 'curl -X GET ${cerfificate_curl_options} --max-time 1 -LIs https://${KUBE_EXTERNAL_LB}/GS/' '| grep -i HTTP | grep "200" | wc -l'
+	echo "$curlStatus"
+}
+
+### Check if Jboss (Orchestrator) running
+function checkIfOrchestratorAccessible()
+{
+	checkCurlStatus 'curl  -X GET ${cerfificate_curl_options} --max-time 1 -LIs https://${KUBE_EXTERNAL_LB}/${edm_default_orchestrator}/rest/events' '| grep -i HTTP | grep "200" | wc -l'
+	echo "$curlStatus"
+}
+  
+### Check if Jboss running
+function checkIfJbossAccessible()
+{
+	curlSleepTimePassed=$1
+	if [ ! -z "$curlSleepTimePassed" ]; then
+		curlSleepTime=${curlSleepTimePassed}		
+	fi
+	checkCurlStatus 'curl -X GET ${cerfificate_curl_options} --max-time 1 -LIs https://${KUBE_EXTERNAL_LB}${default_context_path}/' '| grep -i HTTP | grep "200" | wc -l'
+	if [[ "$curlStatus" == "True" ]] && [[ "${functional_class}" != "keycloak" ]] && [[ "${functional_class}" != "jvmmonitoring" ]]; then
+		curlSleepTime="10"
+		checkCurlStatus 'curl -k --max-time 1 -LIs https://$(hostname):${port}' '| grep -i HTTP | grep "200" | wc -l'
+	fi
+	echo "$curlStatus"
+}

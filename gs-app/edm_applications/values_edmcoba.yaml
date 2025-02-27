@@ -1,0 +1,746 @@
+##### Chart version: 8.8.1-release-37-000
+#####
+  ### os - ubi - 9.4-947
+
+##### Begin - Common configurations
+common:
+  ### cloud - valid options [ "aws", "gcp", "azure", "openshift" ]
+  cloud: "gcp"
+  ### production - valid options [ "true", "false" ]
+  production: false
+  ### executionTime - changing the value will create new Pod instances
+  executionTime: "2025-02-14T07:35:02Z"
+  ### labels - labels will be applied across all resource                     
+  labels: {}
+  ### annotations   - annotations will be applied across all resource
+  annotations: {}
+##### End - Common configurations 
+
+##### Begin - Cluster configurations
+cluster:
+  ### environment/name - EDM Environment name 
+  environment:
+    name: "edmcoba"
+  ### vpc/name - Name of the vpc
+  vpc:
+    name: "edmcoba-virtual-network"
+  ### clusterId - Cluster Id created by cloud provider
+  clusterId: ""
+  ### role/create - ClusterRole will be created 
+  ### permissions for resources: ["namespaces", "pods"], verbs: ["get", "list"]
+  role:
+    create: true
+  ### serviceAccount - Cluster Service Account - Name, Create, Annotations
+  serviceAccount:
+    create: true
+    name: "edmcoba-cluster-service-account"
+    annotations:
+      "iam.gke.io/gcp-service-account": "edmcoba-gcp@gcp-devops-294517.iam.gserviceaccount.com"
+  ### hpa - Cluster Horizontal Pod scaling - Create, Metrics server
+  hpa:
+    create: true
+    metricsServer:
+      create: false
+  ### externalDns - if Dns records should be updated
+  externalDns:
+    create: true
+  ### artefacts - EDM Artefacts - path
+  ### path.application/logs - valid options [ "local", "mount" ]
+  ### 'mount' indicates - EDM Application ears will be sourced from Persistent Volume mount  
+  ### 'local' indicates - EDM Application ears will be sourced from JBoss image
+  artefacts:
+    path:
+      application: "local" 
+      logs: "mount"
+      forceCopy: false
+##### End - Cluster configurations 
+
+##### Begin - Database configurations
+database:
+  ### Type - postgresql/oracle
+  type: "postgresql"
+  ### Database Version
+  version: "14"
+  ### name - EDM Database - name
+  name: "edmcoba"
+  ### host - EDM Database - host
+  host: "10.153.0.3"
+  ### ip - EDM Database - ip
+  ip: "10.153.0.3"
+  ### port - EDM Database - port
+  port: 5432
+  ### service - EDM Database - service
+  service: "edmcoba"
+  ### sslMode - EDM Database can be configured with SSL. valid options [ "None", "require" ]
+  sslMode: "require"
+  ### Table space
+  tableSpace: "USERS"
+  ### owner - EDM Database Owner - user, password
+  owner:
+    user: "postgres"
+    password: "postgres"
+  ### EDM Schema Details
+  schemas:
+  ### EDM Schema Details for Audit - name, owner, user, password
+  - referenceName: Audit
+    name: AUDIT
+    owner: edmcoba_881_ad
+    user: edmcoba_881_ad_app
+    password: edmcoba-881-adapp
+    ### EDM Schema Details for Audit - GEM specific - owner, ownerPassword, user, userPassword
+    gem: 
+      owner: edmcoba_881_ad
+      ownerPassword: edmcoba-881-ad
+      user: edmcoba_881_ad_app
+      userPassword: edmcoba-881-adapp
+  ### EDM Schema Details for GoldenCopy - name, owner, user, password
+  - referenceName: GoldenCopy
+    name: GC
+    owner: edmcoba_881_gc
+    user: edmcoba_881_gc_app
+    password: edmcoba-881-gcapp
+    ### EDM Schema Details for GoldenCopy - GEM specific - owner, ownerPassword, user, userPassword
+    gem: 
+      owner: edmcoba_881_gc
+      ownerPassword: edmcoba-881-gc
+      user: edmcoba_881_gc_app
+      userPassword: edmcoba-881-gcapp
+  ### EDM Schema Details for Insight - name, owner, user, password
+  - referenceName: Insight
+    name: INSIGHT
+    owner: edmcoba_881_is
+    user: edmcoba_881_is_app
+    password: edmcoba-881-isapp
+    ### EDM Schema Details for Insight - GEM specific - owner, ownerPassword, user, userPassword
+    gem: 
+      owner: edmcoba_881_is
+      ownerPassword: edmcoba-881-is
+      user: edmcoba_881_is_app
+      userPassword: edmcoba-881-isapp
+  ### EDM Schema Details for Repository - name, owner, user, password
+  - referenceName: Repository
+    name: INSTREP
+    owner: edmcoba_881_ir
+    user: edmcoba_881_ir
+    password: edmcoba-881-ir
+    ### EDM Schema Details for Repository - GEM specific - owner, ownerPassword, user, userPassword
+    gem: 
+      owner: edmcoba_881_ir
+      ownerPassword: edmcoba-881-ir
+      user: edmcoba_881_ir_app
+      userPassword: edmcoba-881-irapp
+  ### EDM Schema Details for Jobscheduler - name, owner, user, password
+  - referenceName: Jobscheduler
+    name: JOBSCHEDULER
+    owner: edmcoba_881_js
+    user: edmcoba_881_js_app
+    password: edmcoba-881-jsapp
+    ### EDM Schema Details for Jobscheduler - GEM specific - owner, ownerPassword, user, userPassword
+    gem: 
+      owner: edmcoba_881_js
+      ownerPassword: edmcoba-881-js
+      user: edmcoba_881_js_app
+      userPassword: edmcoba-881-jsapp
+  ### EDM Schema Details for Keycloak - name, owner, user, password
+  - referenceName: Keycloak
+    name: KEYCLOAK
+    owner: edmcoba_881_kc
+    user: edmcoba_881_kc_app
+    password: edmcoba-881-kcapp
+    ### EDM Schema Details for Keycloak - GEM specific - owner, ownerPassword, user, userPassword
+    gem: 
+      owner: edmcoba_881_kc
+      ownerPassword: edmcoba-881-kc
+      user: edmcoba_881_kc_app
+      userPassword: edmcoba-881-kcapp
+  ### EDM Schema Details for Platformstate - name, owner, user, password
+  - referenceName: Platformstate
+    name: PLATFORMSTATE
+    owner: edmcoba_881_ps
+    user: edmcoba_881_ps_app
+    password: edmcoba-881-psapp
+    ### EDM Schema Details for Platformstate - GEM specific - owner, ownerPassword, user, userPassword
+    gem: 
+      owner: edmcoba_881_ps
+      ownerPassword: edmcoba-881-ps
+      user: edmcoba_881_ps_app
+      userPassword: edmcoba-881-psapp
+  ### EDM Schema Details for VendorDetail - name, owner, user, password
+  - referenceName: VendorDetail
+    name: VDDB
+    owner: edmcoba_881_vd
+    user: edmcoba_881_vd_app
+    password: edmcoba-881-vdapp
+    ### EDM Schema Details for VendorDetail - GEM specific - owner, ownerPassword, user, userPassword
+    gem: 
+      owner: edmcoba_881_vd
+      ownerPassword: edmcoba-881-vd
+      user: edmcoba_881_vd_app
+      userPassword: edmcoba-881-vdapp
+  ### backup - requires 'bucket' storage. Name and path of the 'bucket' are required
+  backup:
+    storage:
+      name: "goldensource-bucket"
+      path: "databasebackup"
+  ### restore - requires 'bucket' storage. Name and path of the 'bucket' are required
+  restore:
+    storage:
+      name: "goldensource-bucket"
+      path: "databasebackup/20221216"
+##### End - Database configurations
+
+##### Begin - Deployment configurations
+deployments:
+  ### timezone - EDM Platform timezone    
+  timezone: UTC
+  ### secret - EDM Platform Create secret    
+  secret: 
+    create: true
+  ### node - Node details
+  node:
+    nodeSelector: 
+      node_group_name: edmcoba-node
+    tolerations: []
+  ### probes - Probes are used by EDM Functional Applications    
+  probes:
+    ### startupProbe - periodSeconds, failureThreshold
+    startupProbe:
+      periodSeconds: 5
+      failureThreshold: 10
+    ### livenessProbe - periodSeconds, failureThreshold
+    livenessProbe:
+      periodSeconds: 2
+      failureThreshold: 5
+  ### securityContext - EDM Platform containers will start using Non-privileged access - fsGroup, group-gid, user-uid
+  securityContext:
+    fsGroup: 7056
+    runAsGroup: 7056
+    runAsUser: 1004
+  ### edm - EDM Platform details
+  edm:
+    ### version - EDM Platform version
+    version: "8.8.1.39.001"
+    ### dwh - EDM Platform DWH should be enabled - valid options ["None", "Single", "Multiple"] 
+    dwh: "None"
+    ### partition - EDM Platform Partition Enable - valid options ["true", "false"] 
+    partition: true
+    ### engine - EDM Platform Engine environment
+    engine:
+      environment: "edmenv"
+    ### customHelm - If customHelm should be configured, include resources within helpers/_custom and custom folders
+    customHelm: false
+    ### customJvm - customeJVM should be specified as a list of key, value pairs
+    ### This be be configured as JVM argument for EDM Functional Applications
+    customJvm: 
+      [        "persecuritydecryptionkey='none'",
+               "persecuritysftpserver='dlsftp.bloomberg.com'",
+               "persecuritykeyfile='/ext/app/protected/bb/bb.key'",
+               "persecurityusername='dl365'",
+               "persecurityworkdir='/tmp'",
+               "reuterssftpserver='select.datascope.refinitiv.com'",
+               "reuterssftpusername='717495'",
+               "reuterssftpkeyfile='/ext/app/protected/rt/rt.key'",
+               "fl_tps1_jvm_memory='-Xmx16m'",
+               "fl_tps_ui_jvm_memory='-Xmx16m'",
+               "fl_tps_vddb_jvm_memory='-Xmx16m'",
+               "fl_translator_jvm_memory='-Xmx192m'",
+               "fl_max_size_tps1='3'",
+               "fl_min_size_tps1='1'",
+               "fl_max_size_tps_ui='3'",
+               "fl_min_size_tps_ui='1'",
+               "fl_max_size_tps_vddb='3'",
+               "fl_min_size_tps_vddb='1'",
+               "fl_max_size_translator='10'",
+               "fl_min_size_translator='10'",
+               "fl_max_concurrent_work='15'",
+               "fl_thread_count='5'",
+               "pub_tps1_jvm_memory='-Xmx16m'",
+               "pub_tps_ui_jvm_memory='-Xmx16m'",
+               "pub_tps_vddb_jvm_memory='-Xmx16m'",
+               "pub_translator_jvm_memory='-Xmx192m'",
+               "pub_max_size_tps1='3'",
+               "pub_min_size_tps1='1'",
+               "pub_max_size_tps_ui='3'",
+               "pub_min_size_tps_ui='1'",
+               "pub_max_size_tps_vddb='3'",
+               "pub_min_size_tps_vddb='1'",
+               "pub_max_size_translator='10'",
+               "pub_min_size_translator='10'",
+               "pub_max_concurrent_work='15'",
+               "pub_thread_count='5'"
+       ]
+    ### credentials - EDM Platform account credentials - application service account, keycloak credentials
+    credentials:
+      serviceAccountUser: "edmsa"
+      serviceAccountPassword: "edmsa@123"
+      keycloakClientSecret: "8ff05a2b-bc7e-4e08-abb3-8e10666c2a3c"
+      keycloakCookieSecret: "DoiD4m4mZe/0ZCmDrgdMGw=="
+      keycloakUser: "server"
+      keycloakPassword: "server@123"
+      docapiUser: "edmsa"
+      docapiPassword: "E9gqNOEW51R+i2"
+      docapiClientSecret: "x8H4ltE7T71pfF16V40o3gjPp1t8TuTG"
+      
+    ### Users/Roles - EDM Platform Application roles (EDM Users Roles configured in Keycloak)
+    usersRoles:
+      enabled: true
+      roles: "Administrator,ConfigurationManager,ConfigurationViewer,Connect,EventRaiser,InternalRole,TracingViewer,WorkflowDebugger,WorkflowDeveloper,WorkflowManager,administrators,admin,analyst,rest-all,rest-project,users"
+      users:
+      - user: "user1"
+        password: "user1@123"
+        roles: "Administrator,ConfigurationManager,ConfigurationViewer,Connect,EventRaiser,InternalRole,TracingViewer,WorkflowDebugger,WorkflowDeveloper,WorkflowManager,administrators,admin,analyst,rest-all,rest-project,users"
+      - user: "user2"
+        password: "user2@123"
+        roles: "Administrator,ConfigurationManager,ConfigurationViewer,Connect,EventRaiser,InternalRole,TracingViewer,WorkflowDebugger,WorkflowDeveloper,WorkflowManager,administrators,admin,analyst,rest-all,rest-project,users"
+    ### roles - EDM Platform Application roles (Custom EDM Roles)
+    roles:
+      enabled: false
+      pricing:
+        maker: ["ipu_maker","ipu_checker"]
+        checker: "ipu_checker"
+    ### images - EDM Platform 
+    images:
+      ### imagePullPolicy - valid options ["IfNotPresent", "Always", "Never"] 
+      imagePullPolicy: "Always"
+      ### imagePullSecrets - Specify if secrets are required to pull images
+      imagePullSecrets:
+        enabled: false
+        name: ""
+      ### images - EDM Platform standard images - jboss, keycloak
+      jboss: "europe-west2-docker.pkg.dev/gcp-devops-294517/edmcoba-container-registry/goldensourcegcp_jboss-edm-pg:8.8.1.39.001"
+      keycloak: "europe-west2-docker.pkg.dev/gcp-devops-294517/edmcoba-container-registry/goldensourcegcp_keycloak-edm-pg:8.8.1.39.001"
+    ### EDM Platform Application details
+    applications:
+    ### EDM Platform Application - Fileloading
+    ### Deployment configurations - replicas, resource limits/requests, hpa
+    - name: "Fileloading"
+      enabled: true
+      replicas: 1
+      resources:
+        requests:
+          cpu: 0.1
+          memory: "100Mi"
+        limits:
+          cpu: 3
+          memory: "5000Mi"
+        hpa:
+          minReplicas: 1
+          maxReplicas: 1
+          averageUtilization: 30
+          scaleUpPeriodSeconds: 120
+          scaleUpStabilizationWindowSeconds: 300
+          scaleDownPeriodSeconds: 300
+          scaleDownStabilizationWindowSeconds: 300
+    ### EDM Platform Application - GSOService
+    ### Deployment configurations - replicas, resource limits/requests, hpa
+    - name: "GSOService"
+      enabled: true
+      replicas: 1
+      resources:
+        requests:
+          cpu: 0.1
+          memory: "100Mi"
+        limits:
+          cpu: 2
+          memory: "6000Mi"
+        hpa:
+          minReplicas: 1
+          maxReplicas: 1
+          averageUtilization: 30
+          scaleUpPeriodSeconds: 120
+          scaleUpStabilizationWindowSeconds: 180
+          scaleDownPeriodSeconds: 120
+          scaleDownStabilizationWindowSeconds: 180
+    ### EDM Platform Application - JvmMonitoring
+    ### Deployment configurations - replicas, resource limits/requests, hpa
+    - name: "JvmMonitoring"
+      enabled: true
+      replicas: 1
+      resources:
+        requests:
+          cpu: 0.1
+          memory: "100Mi"
+        limits:
+          cpu: 2
+          memory: "4000Mi"
+        hpa:
+          minReplicas: 1
+          maxReplicas: 1
+          averageUtilization: 70
+          scaleUpPeriodSeconds: 120
+          scaleUpStabilizationWindowSeconds: 300
+          scaleDownPeriodSeconds: 300
+          scaleDownStabilizationWindowSeconds: 300
+    ### EDM Platform Application - Keycloak
+    ### Deployment configurations - replicas, resource limits/requests, hpa
+    - name: "Keycloak"
+      enabled: true
+      replicas: 1
+      resources:
+        requests:
+          cpu: 0.1
+          memory: "100Mi"
+        limits:
+          cpu: 1
+          memory: "2000Mi"
+        hpa:
+          minReplicas: 1
+          maxReplicas: 1
+          averageUtilization: 70
+          scaleUpPeriodSeconds: 120
+          scaleUpStabilizationWindowSeconds: 180
+          scaleDownPeriodSeconds: 120
+          scaleDownStabilizationWindowSeconds: 180
+    ### EDM Platform Application - Publishing
+    ### Deployment configurations - replicas, resource limits/requests, hpa
+    - name: "Publishing"
+      enabled: true
+      replicas: 1
+      resources:
+        requests:
+          cpu: 0.1
+          memory: "100Mi"
+        limits:
+          cpu: 3
+          memory: "8000Mi"
+        hpa:
+          minReplicas: 1
+          maxReplicas: 1
+          averageUtilization: 50
+          scaleUpPeriodSeconds: 120
+          scaleUpStabilizationWindowSeconds: 300
+          scaleDownPeriodSeconds: 300
+          scaleDownStabilizationWindowSeconds: 300
+    ### EDM Platform Application - Workstation
+    ### Deployment configurations - replicas, resource limits/requests, hpa
+    - name: "Workstation"
+      enabled: true
+      replicas: 1
+      resources:
+        requests:
+          cpu: 0.1
+          memory: "100Mi"
+        limits:
+          cpu: 6
+          memory: "8000Mi"
+        hpa:
+          minReplicas: 1
+          maxReplicas: 1
+          averageUtilization: 70
+          scaleUpPeriodSeconds: 120
+          scaleUpStabilizationWindowSeconds: 180
+          scaleDownPeriodSeconds: 120
+          scaleDownStabilizationWindowSeconds: 180
+  ### EDM Platform Utility Application details
+  utilities:
+    ### images - EDM Platform Utility Image
+    images:
+      ### imagePullPolicy - valid options ["IfNotPresent", "Always", "Never"] 
+      imagePullPolicy: "Always"
+      platform: "europe-west2-docker.pkg.dev/gcp-devops-294517/edmcoba-container-registry/goldensourcegcp_platform-util-pg:8.8.1.39.001"
+    ### EDM Platform Utility Application details
+    applications:
+    ### EDM Platform Utility Application - Filebrowser
+    ### Deployment configurations - resource limits/requests
+    - name: "Filebrowser"
+      enabled: true
+      roles: "users"
+      resources:
+        requests:
+          cpu: 0.1
+          memory: "100Mi"
+        limits:
+          cpu: 0.2
+          memory: "500Mi"
+      image: "europe-west2-docker.pkg.dev/gcp-devops-294517/edmcoba-container-registry/goldensourcegcp_platform-util-pg:8.8.1.39.001"
+    ### EDM Platform Utility Application - Quantworkbench
+    ### Deployment configurations - resource limits/requests
+    - name: "Quantworkbench"
+      enabled: true
+      roles: "users"
+      resources:
+        requests:
+          cpu: 0.1
+          memory: "100Mi"
+        limits:
+          cpu: 1
+          memory: "2000Mi"
+      image: "europe-west2-docker.pkg.dev/gcp-devops-294517/edmcoba-container-registry/goldensourcegcp_quantworkbench-edm-pg:8.8.1.39.001"
+    ### EDM Platform Utility Application - Cloudbeaver
+    ### Deployment configurations - resource limits/requests
+    - name: "Cloudbeaver"
+      enabled: true
+      roles: "users"
+      resources:
+        requests:
+          cpu: 0.1
+          memory: "100Mi"
+        limits:
+          cpu: 2
+          memory: "4000Mi"
+      image: "europe-west2-docker.pkg.dev/gcp-devops-294517/edmcoba-container-registry/goldensourcegcp_platform-util-pg:8.8.1.39.001"
+    ### EDM Platform Utility Application - DatabaseUtil
+    ### Deployment configurations - resource limits/requests
+    - name: "DatabaseUtil"
+      enabled: true
+      roles: "users"
+      resources:
+        requests:
+          cpu: 0.1
+          memory: "100Mi"
+        limits:
+          cpu: 2
+          memory: "4000Mi"
+      image: "europe-west2-docker.pkg.dev/gcp-devops-294517/edmcoba-container-registry/goldensourcegcp_database-util-pg:8.8.1.39.001"
+    ### EDM Platform Utility Application - Jobscheduler
+    ### Deployment configurations - resource limits/requests
+    - name: "Jobscheduler"
+      enabled: true
+      roles: "users"
+      resources:
+        requests:
+          cpu: 0.1
+          memory: "100Mi"
+        limits:
+          cpu: 2
+          memory: "4000Mi"
+      image: "europe-west2-docker.pkg.dev/gcp-devops-294517/edmcoba-container-registry/goldensourcegcp_jobscheduler-util-pg:8.8.1.39.001"
+    ### EDM Platform Utility Application - Insight
+    ### Deployment configurations - resource limits/requests
+    - name: "Insight"
+      enabled: true
+      roles: "users"
+      resources:
+        requests:
+          cpu: 0.1
+          memory: "100Mi"
+        limits:
+          cpu: 2
+          memory: "4000Mi"
+      image: "europe-west2-docker.pkg.dev/gcp-devops-294517/edmcoba-container-registry/goldensourcegcp_insight-util-pg:8.8.1.39.001"
+    ### EDM Platform Utility Application - EDMA
+    ### Deployment configurations - resource limits/requests
+    - name: "EDMA"
+      enabled: true
+      roles: "users"
+      resources:
+        requests:
+          cpu: 0.1
+          memory: "100Mi"
+        limits:
+          cpu: 2
+          memory: "2000Mi"
+      image: "europe-west2-docker.pkg.dev/gcp-devops-294517/edmcoba-container-registry/goldensourcegcp_edma-edm-pg:8.8.1.39.001"
+    ### EDM Platform Utility Application - GEM
+    ### Deployment configurations - resource limits/requests
+    - name: "GEM"
+      enabled: true
+      roles: "users"
+      resources:
+        requests:
+          cpu: 0.1
+          memory: "100Mi"
+        limits:
+          cpu: 2
+          memory: "4000Mi"
+      image: "europe-west2-docker.pkg.dev/gcp-devops-294517/edmcoba-container-registry/goldensourcegcp_gem-edm-pg:8.8.1.39.001"
+    ### EDM Platform Utility Application - KeycloakInitialization
+    ### Deployment configurations - resource limits/requests
+    - name: "KeycloakInitialization"
+      enabled: true
+      roles: "users"
+      resources:
+        requests:
+          cpu: 0.1
+          memory: "100Mi"
+        limits:
+          cpu: 1
+          memory: "2000Mi"
+      image: "europe-west2-docker.pkg.dev/gcp-devops-294517/edmcoba-container-registry/goldensourcegcp_keycloak-edm-pg:8.8.1.39.001"
+##### End - Deployment configurations      
+
+##### Begin - Persistent Volume configurations
+persistentVolume:
+  fileSystemId: "None"
+  ### Storage class
+  storageClass:
+    create: true
+    name: "edmcoba-storage-class"
+    ### type - valid options AWS - ["ebs", "efs"], Azure - ["azurefile"], GCP - ["pd-balanced", "pd-premium", "filestore-standard", "filestore-premium"] 
+    type: "standard"
+    network: "edmcoba-virtual-network"
+  ##### Storage size
+  storage: "100Gi"
+  ##### Persistent Volume claim #Name - edm-persistent-volume-claim
+  persistentVolumeClaim:
+    ### Create Persistent Volume Claim
+    create: true
+    ### labels - labels will be applied for Persistent Volume Claim                     
+    labels: {}
+    ### annotations   - annotations will be applied for Persistent Volume Claim
+    annotations: {}
+##### End - Persistent Volume configurations
+  
+##### Begin - Certificate configurations
+certificates: 
+  certificateDatabaseClient: "client-cert.cer"
+  certificateDatabaseKey: "client-key.pk8"
+  certificateDatabaseOdbcCertificate: "database.cer"
+  certificateDatabaseOdbcKey: "database.key"
+  certificateDatabaseOdbcRoot: "root.cer"
+  certificateDatabaseServer: "server-ca.cer"
+  certificateIdentityKeyStoreAlias: "*.thegoldensource.com"
+  certificateIdentityKeyStoreDName: "CN=*.thegoldensource.com"
+  certificateIdentityKeyStoreFile: "identity.jks"
+  certificateIdentityKeyStorePassphrase: "server@123"
+  certificateIdentityKeyStoreType: "jks"
+  certificateTrustKeyStoreAlias: "*.thegoldensource.com"
+  certificateTrustKeyStoreDName: "CN=*.thegoldensource.com"
+  certificateTrustKeyStoreFile: "trust.jks"
+  certificateTrustKeyStorePassphrase: "server@123"
+  certificateTrustKeyStoreType: "jks"
+  ### Certificate Curl - valid options - ["path", "pathFiles", "others"]
+  certificateCurl: "pathFiles"
+##### End - Certificate configurations
+
+##### Begin - Ingress configurations  
+ingresses:
+  role:
+    create: true
+  ### Ingress Name Prefix
+  ingressNamePrefix: edmcoba
+  ### Ingress TCP Port Prefix (Used if Shared LB across namespaces)
+  ingressTCPPrefix: ""
+  lb:
+    ### scheme - valid options ["internet-facing", "internal"]
+    scheme: "internet-facing"
+    ### singleLoadBalancer - true  - The load balancer is configured to listen on port '443' for all 'ui' Applications.
+    ###                              Load balancer for Orchestrator Applications is configured to listen on respective Orchestrator ports viz., '8943', '9043' etc.
+    ### singleLoadBalancer - false - The load balancer is configured to listen on port '443' for all 'ui' and Orchestrator Applications.
+    singleLoadBalancer: true
+    ### type - valid options ["Default", "alb", "nlb"]. "alb", "nlb" to be configured for AWS
+    type: "Default"
+    ### White Listed IPs
+    whiteListedIPs: ""
+    ### Hosted Zone Name (aws, gcp)
+    hostedZoneName: "thegoldensource-gcp.com"
+    ### Hosted Zone Id (aws)
+    hostedZoneId: ""
+    ### Hosted Zone Route53 ARN (aws)
+    hostedZoneRoleArn: ""
+
+  default:
+    annotations:
+  ingress:
+    Fileloading:
+      create: false
+      ingressClassName: nginx
+      host: "edmcoba.thegoldensource-gcp.com"
+      annotations: {}
+    Publishing:
+      create: false
+      ingressClassName: nginx
+      host: "edmcoba.thegoldensource-gcp.com"
+      annotations: {}
+    database:
+      create: true
+      ingressClassName: nginx
+      host: "edmcoba.thegoldensource-gcp.com"
+      annotations: {}
+    ui:
+      create: true
+      ingressClassName: nginx
+      host: "edmcoba.thegoldensource-gcp.com"
+      annotations: {}
+##### End - Ingress configurations
+
+##### Begin - Jobs configurations
+jobs:
+  databaseSchemas:
+    create: true
+  applications:
+    gem:
+      enabled: true
+    domains:
+      enabled: true
+    elasticsearchIndex:
+      enabled: false
+    edma:
+      enabled: true
+    reorgDatabase: 
+      enabled: false
+      ### Reorg execute - valid options ["None", "va", "vf", "rt", "va,rt"] 
+      execute: "None"
+  cron:
+    cleanup:
+      enabled: true
+      before: 10
+      schedule: "0 2 * * *"
+    reorgDatabase: 
+      enabled: false
+      ### Reorg execute - valid options ["None", "va", "vf", "rt", "va,rt"] 
+      before: 10
+      schedule: "0 1 * * *"
+      execute: "None"
+    backupDatabase:
+      enabled: true
+      before: 10
+      schedule: "0 2 * * *"
+    rdsEndpoint:
+      enabled: false
+      before: 10
+      schedule: "*/5 * * * *"
+  images:
+    ### imagePullPolicy - valid options ["IfNotPresent", "Always", "Never"] 
+    imagePullPolicy: "Always"
+##### End - Jobs configurations
+
+
+##### Begin - Selenium configurations
+selenium:
+  hub:
+    image: "europe-west2-docker.pkg.dev/gcp-devops-294517/edmcoba-container-registry/goldensourcegcp_selenium-util-pg:8.8.1.39.001"
+    resources:
+      requests:
+        cpu: 0.1
+        memory: "10Mi"
+      limits:
+        cpu: 1
+        memory: "2000Mi"
+      hpa:
+        minReplicas: 1
+        maxReplicas: 1
+        averageUtilization: 90
+        scaleUpPeriodSeconds: 30
+        scaleUpStabilizationWindowSeconds: 300
+        scaleDownPeriodSeconds: 300
+        scaleDownStabilizationWindowSeconds: 300
+  node:
+    image: "europe-west2-docker.pkg.dev/gcp-devops-294517/edmcoba-container-registry/goldensourcegcp_selenium-util-pg:8.8.1.39.001"
+    resources:
+      requests:
+        cpu: 0.1
+        memory: "10Mi"
+      limits:
+        cpu: 1
+        memory: "2000Mi"
+      hpa:
+        minReplicas: 5
+        maxReplicas: 5
+        averageUtilization: 90
+        scaleUpPeriodSeconds: 20
+        scaleUpStabilizationWindowSeconds: 0
+        scaleDownPeriodSeconds: 20
+        scaleDownStabilizationWindowSeconds: 120
+#### End - Selenium configurations
+
+##### Begin - Sub chart configurations
+subCharts:
+  elasticsearch:
+    master:
+      enabled: false
+    index: "datastaging"
+    credentials:
+      user: "esUser"
+      password: "esUser@123"
+##### End - Sub chart configurations

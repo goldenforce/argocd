@@ -1,0 +1,84 @@
+## Create Database schemas
+createDatabaseSchemas()
+{
+	### Initialize
+	initializeDatabase
+	echoLog "INFO" "Job - $(hostname) - Image - Repository - ${application_image}" "Create Database/Schemas" "True" | tee -a ${createDatabaseSchemasLogFile}
+
+	### Check if Database exists
+	checkDatabaseExists
+	if [ ! "${databaseExists}" == "1" ]; then
+		createDatabase ${createDatabaseSchemasLogFile} ${createDatabaseSchemasWorkFolder}/work
+	fi
+
+	## Get Schema details
+	failedCount=0
+	for schema in $databaseSchemaDetails 
+	do
+		getDatabaseSchemaOwnerUsersDetails ${schema}
+
+		### Create User (Owner)
+		executeCommandAndCheckError "createDatabaseRole ${gemSchemaOwner} ${gemSchemaOwnerPassword} ${createDatabaseSchemasWorkFolder}/work ${DatabaseTablespace}" "Create Database/Schemas" "User Create - ${gemSchemaOwner}" "${createDatabaseSchemasLogFile}" "createRoleSQLError" "true"
+		if [ "${executeCommandAndCheckErrorStatus}" == "Failed" ]; then
+			((failedCount += 1))
+		fi
+
+		### Create Schema
+		executeCommandAndCheckError "createDatabaseSchema ${gemSchemaOwner} ${createDatabaseSchemasWorkFolder}/work" "Create Database/Schemas" "Schema Create - ${gemSchemaOwner}" "${createDatabaseSchemasLogFile}" "createDatabaseSchemaSQLError" "true"
+		if [ "${executeCommandAndCheckErrorStatus}" == "Failed" ]; then
+			((failedCount += 1))
+		fi
+
+		### Create User (User) 
+		executeCommandAndCheckError "createDatabaseRole ${gemSchemaUser} ${gemSchemaUserPassword} ${createDatabaseSchemasWorkFolder}/work ${DatabaseTablespace}" "Create Database/Schemas" "User Create - ${gemSchemaUser}" "${createDatabaseSchemasLogFile}" "createRoleSQLError" "true"
+		if [ "${executeCommandAndCheckErrorStatus}" == "Failed" ]; then
+			((failedCount += 1))
+		fi
+
+		### Create Role Privilege (Owner)
+		executeCommandAndCheckError "createDatabaseRolePrivileges ${gemSchemaOwner} ${gemSchemaOwner} ${createDatabaseSchemasWorkFolder}/work ${DatabaseTablespace}" "Create Database/Schemas" "Role Privilege - ${gemSchemaOwner}" "${createDatabaseSchemasLogFile}" "createDatabaseRolePrivilegesSQLError" "true"
+		if [ "${executeCommandAndCheckErrorStatus}" == "Failed" ]; then
+			((failedCount += 1))
+		fi
+
+		### Create Role Privilege (User)
+		executeCommandAndCheckError "createDatabaseRolePrivileges ${gemSchemaUser} ${gemSchemaOwner} ${createDatabaseSchemasWorkFolder}/work ${DatabaseTablespace}" "Create Database/Schemas" "Role Privilege - ${gemSchemaUser}" "${createDatabaseSchemasLogFile}" "createDatabaseRolePrivilegesSQLError" "true"
+		if [ "${executeCommandAndCheckErrorStatus}" == "Failed" ]; then
+			((failedCount += 1))
+		fi
+
+		### Create User Password (Owner)
+		#executeCommandAndCheckError "passwordDatabaseUser ${gemSchemaOwner} ${gemSchemaOwnerPassword} ${createDatabaseSchemasWorkFolder}/work" "Create Database/Schemas" "User Password - ${gemSchemaOwner}" "${createDatabaseSchemasLogFile}" "passwordDatabaseUserSQLError" "true"
+		#if [ "${executeCommandAndCheckErrorStatus}" == "Failed" ]; then
+		#	((failedCount += 1))
+		#fi
+
+		#### Create User Password (User)
+		#executeCommandAndCheckError "passwordDatabaseUser ${gemSchemaUser} ${gemSchemaUserPassword} ${createDatabaseSchemasWorkFolder}/work" "Create Database/Schemas" "User Password - ${gemSchemaUser}" "${createDatabaseSchemasLogFile}" "passwordDatabaseUserSQLError" "true"
+		#if [ "${executeCommandAndCheckErrorStatus}" == "Failed" ]; then
+		#	((failedCount += 1))
+		#fi
+	done
+	### Create Platform State Table
+	executeCommandAndCheckError "createTablePlatformState ${createDatabaseSchemasWorkFolder}/work" "Create Database/Schemas" "Platform State - Table" "${createDatabaseSchemasLogFile}" "createTablePlatformStateSQLError" "true"
+	if [ "${executeCommandAndCheckErrorStatus}" == "Failed" ]; then
+		((failedCount += 1))
+	fi
+
+	### Assign Audit Role To GC
+	executeCommandAndCheckError "assignAUDITRoleToGC ${createDatabaseSchemasWorkFolder}/work" "Create Database/Schemas" "Assign Role - ${GEMSchemaOwner_AUDIT}" "${createDatabaseSchemasLogFile}" "assignAUDITRoleToGCSQLError" "true"
+	if [ "${executeCommandAndCheckErrorStatus}" == "Failed" ]; then
+		((failedCount += 1))
+	fi
+
+	### Final process
+	createDatabaseSchemasStatus="Failed"
+	configurePlatformStateSetTaskStatus="Failed"
+	if [ ${failedCount} -eq 0 ]; then
+		createDatabaseSchemasStatus="Completed"
+	fi
+	rm -rf ${createDatabaseSchemasWorkFolder}/work/*.sql
+
+	### Process Platform State
+	configurePlatformStateSetTask "createDatabaseSchemas" "${edm_version}" "${createDatabaseSchemasStatus}"
+}

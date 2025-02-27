@@ -1,0 +1,87 @@
+### Basic, Annotations
+{{- $annotationsLabels := include "annotationsLabels" . | fromYaml }}
+### ConfigMap 
+{{- $configMap := include "configMap" . | fromYaml }}
+{{- $configMapScripts := include "configMapScripts" . | fromYaml }}
+{{- $configMapConfigurations := include "configMapConfigurations" . | fromYaml }}
+{{- $configMapFunctions := include "configMapFunctions" . | fromYaml }}
+###
+apiVersion: v1
+{{- with $configMap }}
+{{ toYaml . | nindent 0 }}
+{{- end }}
+kind: ConfigMap
+metadata:
+  name: edm-applications-config-map
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    {{- with $annotationsLabels.common.annotations}}
+    {{ toYaml . | nindent 4 }}
+    {{- end }}
+  labels:
+    {{- with $annotationsLabels.common.labels}}
+    {{ toYaml . | nindent 4 }}
+    {{- end }}
+---
+apiVersion: v1
+{{- with $configMapScripts }}
+{{ toYaml . | nindent 0 }}
+{{- end }}
+kind: ConfigMap
+metadata:
+  name: edm-scripts-config-map
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    {{- with $annotationsLabels.common.annotations}}
+    {{ toYaml . | nindent 4 }}
+    {{- end }}
+  labels:
+    {{- with $annotationsLabels.common.labels}}
+    {{ toYaml . | nindent 4 }}
+    {{- end }}
+---
+apiVersion: v1
+{{- with $configMapConfigurations }}
+{{ toYaml . | nindent 0 }}
+{{- end }}
+kind: ConfigMap
+metadata:
+  name: edm-configurations-config-map
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    {{- with $annotationsLabels.common.annotations}}
+    {{ toYaml . | nindent 4 }}
+    {{- end }}
+  labels:
+    {{- with $annotationsLabels.common.labels}}
+    {{ toYaml . | nindent 4 }}
+    {{- end }}
+---
+apiVersion: v1
+{{- with $configMapFunctions }}
+{{ toYaml . | nindent 0 }}
+{{- end }}
+kind: ConfigMap
+metadata:
+  name: edm-functions-config-map
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    {{- with $annotationsLabels.common.annotations}}
+    {{ toYaml . | nindent 4 }}
+    {{- end }}
+  labels:
+    {{- with $annotationsLabels.common.labels}}
+    {{ toYaml . | nindent 4 }}
+    {{- end }}
+---
+{{- if eq $.Values.common.cloud "openshift" }}
+{{- if eq $.Values.ingresses.ingress.ui.ingressClassName "openshift-default" }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: edm-servicetlsbundle-map
+  annotations:
+    service.beta.openshift.io/inject-cabundle: "true"
+{{- end }}
+{{- end }}
+---

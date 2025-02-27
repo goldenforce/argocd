@@ -1,0 +1,54 @@
+function responseCodeCheck() 
+{
+	responseCodeCheckStatus="Failed"
+	if [[ $1 -eq 302 ]]; then
+		if [[ "${2,,}" == "basic" ]]; then
+			echoLog "INFO" "Response Code - Check - Started" "Job ${job_name}" >>$job_log
+			auth_type=oauth
+			echoLog "INFO" "Response Code - Check - Completed" "Job ${job_name}" >>$job_log
+		fi
+	elif [[ $1 -eq 200 ]]; then
+		if [[ "${2,,}" == "oauth" ]]; then
+			echoLog "INFO" "Response Code - Check - Started" "Job ${job_name}" >>$job_log
+			auth_type=basic
+			echoLog "INFO" "Response Code - Check - Completed" "Job ${job_name}" >>$job_log
+		fi
+	else
+		if [[ $1 -eq 401 || $1 -eq 403 ]]; then
+			echo "ERROR - Authentication Issue"
+			echo "ERROR - Authentication Issue - Failed  $(date +'%d-%b-%Y %T')"
+			echoLog "ERROR" "Response Code - Authentication - Failed" "Job ${job_name}" >>$job_log
+			return
+		elif [[ $1 -eq 404 || $1 -eq 000 ]]; then
+			echo "ERROR - Application Down"
+			echo "ERROR - Application Down - Failed  $(date +'%d-%b-%Y %T')"
+			echoLog "ERROR" "Response Code - Application Down - Failed" "Job ${job_name}" >>$job_log
+			return
+		fi
+	fi
+	responseCodeCheckStatus="Completed"
+}
+function returnCodeCheck() 
+{
+	if [[ ${1} -eq 0 ]]; then
+		echo "INFO - Workflow - Completed"
+		echo "INFO - Workflow - Completed $(date +'%d-%b-%Y %T')"
+		echoLog "INFO" "Return Code - Workflow - Completed" "Job ${job_name}" >>$job_log
+	elif [[ ${1} -eq 1 ]]; then
+		echo "ERROR - Workflow - Failed"
+		echo "ERROR - Workflow - Failed $(date +'%d-%b-%Y %T')"
+		echoLog "ERROR" "Return Code - Workflow - Failed" "Job ${job_name}" >>$job_log
+	elif [[ ${1} -eq 2 ]]; then
+		echo "INFO - Workflow - Running"
+		echo "INFO - Workflow - Running $(date +'%d-%b-%Y %T')"
+		echoLog "ERROR" "Return Code - Workflow - Running" "Job ${job_name}" >>$job_log
+	elif [[ ${1} -eq 3 ]]; then
+		echo "ERROR - Workflow Issue - Failed"
+		echo "ERROR - Workflow Issue - Failed $(date +'%d-%b-%Y %T')"
+		echoLog "ERROR" "Return Code - Workflow Issue - Failed" "Job ${job_name}" >>$job_log
+	elif [[ ${1} -eq 4 ]]; then
+		echo "ERROR - Workflow Has Error - Failed"
+		echo "ERROR - Workflow Has Error - Failed $(date +'%d-%b-%Y %T')"
+		echoLog "ERROR" "Return Code - Workflow Has Error - Failed" "Job ${job_name}" >>$job_log
+	fi
+}

@@ -1,0 +1,283 @@
+### Basic, Annotations
+{{- $basic := include "basic" . | fromYaml }}
+{{- $annotationsLabels := include "annotationsLabels" . | fromYaml }}
+{{- $annotationsLabelsService := include "annotationsLabelsService" . | fromYaml }}
+### Applications
+{{- $applications := include "applications" . | fromYaml }}
+### Ingresses
+{{- $ingresses := include "ingresses" . | fromYaml }}
+### Init container
+{{- $initContainer := include "initContainer" . | fromYaml }}
+### Volume Mounts
+{{- $volumeMounts := include "volumeMounts" . | fromYaml }}
+### Volumes
+{{- $volumes := include "volumes" . | fromYaml }}
+### Custom
+{{- $custom := include "custom" . | fromYaml }}
+### Checksum
+{{- $checkSum := include "checkSum" . | fromYaml }}
+###
+{{- range $k, $v := $applications.applications -}}
+{{- if eq "EDMA" $k }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: selenium-hub
+  annotations:
+    {{- with $annotationsLabelsService.service.annotations }}
+    {{ toYaml . | nindent 4 }}
+    {{- end }}
+
+    ### Openshift
+    {{- if eq $.Values.common.cloud "openshift" }}
+    {{- if eq $.Values.ingresses.ingress.ui.ingressClassName "openshift-default" }}
+    service.beta.openshift.io/serving-cert-secret-name: {{ printf "edm-openshift-%s" "selenium-hub" }}
+    {{- end }}
+    {{- end }}
+  labels:
+    cluster: selenium-hub
+    app: selenium-hub
+    {{- with $annotationsLabels.common.labels }}
+    {{ toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  ports:
+  - name: "selenium-hub"
+    port: 4444
+    targetPort: 4444
+  - name: "subscribe-events"
+    port: 4443
+    targetPort: 4443
+  - name: "publish-events"
+    port: 4442
+    targetPort: 4442
+  - name: http
+    port: 6500
+    protocol: TCP
+    targetPort: 6500
+  selector:
+    cluster: selenium-hub
+  sessionAffinity: ClientIP
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: selenium-hub
+  annotations:
+    {{- with $annotationsLabels.common.annotations }}
+    {{ toYaml . | nindent 4 }}
+    {{- end }}
+    checksum/edm-applications-checkSum: {{ $checkSum  | toJson | sha256sum }}
+  labels:
+    cluster: selenium-hub
+    app: selenium-hub
+    {{- with $annotationsLabels.common.labels }}
+    {{ toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  replicas: {{ $v.replicas }}
+  selector:
+    matchLabels:
+      cluster: selenium-hub
+      app: selenium-hub
+      {{- with $annotationsLabels.common.labels }}
+      {{ toYaml . | nindent 6 }}
+      {{- end }}
+  template:
+    metadata:
+      annotations:
+        checksum/edm-applications-checkSum: {{ $checkSum  | toJson | sha256sum }}
+        {{- with $annotationsLabels.common.annotations }}
+        {{ toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        cluster: selenium-hub
+        app: selenium-hub
+        {{- with $annotationsLabels.common.labels }}
+        {{ toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      ### Image Pull Secret
+      {{- if $basic.basic.imagePullSecretsEnabled }}
+      imagePullSecrets:
+        - name: {{ $basic.basic.imagePullSecretsName }}
+      {{- end }}
+      ### Node Affinity
+      {{- with $basic.basic.cluster.node }}
+      {{ toYaml . | nindent 6 }}
+      {{- end }}
+      ### Init container
+      {{- with $initContainer }}
+      {{- with index . "selenium-hub" }}
+      {{ toYaml . | nindent 6 }}
+      {{- end }}
+      {{- end }}
+      ### Init container - Custom
+      {{- if $basic.basic.customHelm }}
+      {{- with $custom.custom.initContainers }}
+      {{ toYaml . | nindent 6 }}
+      {{- end }}
+      {{- end }}
+      securityContext:
+        runAsUser: {{ $v.securityContext.runAsUser }}
+        runAsGroup: {{ $v.securityContext.runAsGroup }}
+        fsGroup: {{ $v.securityContext.fsGroup }}
+        fsGroupChangePolicy: {{ $v.securityContext.fsGroupChangePolicy }}
+      terminationGracePeriodSeconds: 0
+      serviceAccountName: {{ $basic.basic.cluster.serviceAccountName }}
+      automountServiceAccountToken: true
+      containers:
+      - name: selenium-hub
+        image: {{ $.Values.selenium.hub.image }}
+        imagePullPolicy: {{ $basic.basic.imagePullPolicy }}
+        env:
+          - name: SE_EVENT_BUS_HOST
+            value: "selenium-hub"
+          - name: SE_EVENT_BUS_PUBLISH_PORT
+            value: "4442"
+          - name: SE_EVENT_BUS_SUBSCRIBE_PORT
+            value: "4443"
+          - name: SE_SESSION_REQUEST_TIMEOUT
+            value: "3600"
+          - name: SE_VNC_NO_PASSWORD
+            value: "1"
+          - name: HOME
+            value: "/ext/app"
+          - name: logs_home
+            value: {{ $basic.basic.artefacts.pathLogs }}
+        command: ["/bin/sh", "-c"]
+        args: 
+        - |
+          ## Bash profile
+          cd /ext/app
+          . ./.bash_profile
+
+          ## Initialize logs
+          HostAnyCase="$HOSTNAME"
+          Host="${HostAnyCase,,}"
+          mkdir -p /${logs_home}/logs/UtilityApplications/Selenium/${Host}
+          logFile="/${logs_home}/logs/UtilityApplications/Selenium/${Host}/selenium-hub.log"
+
+          ## Configuration
+          cat <<EOF > /ext/app/selenium/conf.toml
+          [logging]
+          http-logs = true
+          log-file = "${logFile}"
+          log-level = "INFO"          
+          EOF
+
+          ## Start Hub
+          cd /ext/app/selenium
+          java -Dwebdriver.http.factory=jdk-http-client -jar selenium-server*.jar --ext selenium-http-jdk*.jar hub --sub-path "selenium" --session-request-timeout 2000 --session-retry-interval 15 --relax-checks true --bind-host false --config /ext/app/selenium/conf.toml         
+        ports:
+        - containerPort: 4444
+          name: http
+          protocol: TCP
+        resources:
+          limits:
+            memory: {{ $.Values.selenium.hub.resources.limits.memory }}
+            cpu: {{ $.Values.selenium.hub.resources.limits.cpu }}
+          requests:
+            memory: {{ $.Values.selenium.hub.resources.requests.memory }}
+            cpu: {{ $.Values.selenium.hub.resources.requests.cpu }}
+        livenessProbe:
+          httpGet:
+            path: /status
+            port: 4444
+          timeoutSeconds: 5
+        readinessProbe:
+          httpGet:
+            path: /status
+            port: 4444
+          timeoutSeconds: 5
+        ### Volume Mounts
+        {{- with $volumeMounts }}
+        {{- with index . "selenium-hub" }}
+        {{ toYaml . | nindent 8 }}
+        {{- end }}
+        {{- end }}
+        ### Volume Mounts - Custom
+        {{- if $basic.basic.customHelm }}
+        {{- with $custom.custom.volumeMounts }}
+        {{ toYaml . | nindent 8 }}
+        {{- end }}
+        {{- end }}
+      - name: selenium-grid-keycloak-gatekeeper
+        image: {{ $applications.applications.Filebrowser.imageGatekeeper }}
+        imagePullPolicy: {{ $basic.basic.imagePullPolicy }}
+        command: ["/bin/sh", "-c"]
+        env:
+        {{- if $basic.basic.customHelm }}
+        {{- with $custom.custom.env }}
+        {{ toYaml . | nindent 8 }}
+        {{- end }}
+        {{- end }}
+        envFrom:
+        - configMapRef:
+            name: edm-applications-config-map
+            optional: false
+        args:
+        - |
+          ### Load Scripts
+          . /etc/edm/functions/edm_functions.sh
+
+          ### Configuration file
+          cat <<EOF > /ext/app/keycloak_gatekeeper/oauth2-proxy.conf
+            provider="keycloak-oidc"
+            client_id="Selenium"
+            client_secret="${Keycloak_client_secret}"
+            proxy_prefix="/selenium/oauth2"
+            upstreams=["http://127.0.0.1:4444"]
+            oidc_issuer_url="https://{{ $ingresses.ingresses.ui.host }}/auth/realms/{{ $basic.basic.realm }}"
+            profile_url="https://{{ $ingresses.ingresses.ui.host }}/auth/realms/{{ $basic.basic.realm }}/protocol/openid-connect/userinfo"
+            allowed_roles=["users"]
+            https_address="0.0.0.0:6500"
+            cookie_secret="somerandomstring12341234567890AB"
+            email_domains=["*"]
+            insecure_oidc_allow_unverified_email="true"
+            skip_provider_button="true"
+            custom_templates_dir="/ext/app/keycloak_gatekeeper"
+            ssl_insecure_skip_verify="true"
+            skip_oidc_discovery="true"
+            login_url="https://{{ $ingresses.ingresses.ui.host }}/auth/realms/{{ $basic.basic.realm }}/protocol/openid-connect/auth"
+            redeem_url="https://{{ $ingresses.ingresses.ui.host }}/auth/realms/{{ $basic.basic.realm }}/protocol/openid-connect/token"
+            oidc_jwks_url="https://{{ $ingresses.ingresses.ui.host }}/auth/realms/{{ $basic.basic.realm }}/protocol/openid-connect/certs"
+            tls_cert_file="/ext/app/protected/Certificates/ui/certificate.crt"
+            tls_key_file="/ext/app/protected/Certificates/ui/private.key"
+            ssl_upstream_insecure_skip_verify="true"
+          EOF
+          ### Start Oauth proxy
+          cd /ext/app/keycloak_gatekeeper
+          ./oauth2-proxy --config /ext/app/keycloak_gatekeeper/oauth2-proxy.conf
+        ports:
+        - containerPort: 6500
+          name: http
+          protocol: TCP
+        ### Volume Mounts
+        {{- with $volumeMounts }}
+        {{- with index . "selenium-hub" }}
+        {{ toYaml . | nindent 8 }}
+        {{- end }}
+        {{- end }}
+        ### Volume Mounts - Custom
+        {{- if $basic.basic.customHelm }}
+        {{- with $custom.custom.volumeMounts }}
+        {{ toYaml . | nindent 8 }}
+        {{- end }}
+        {{- end }}
+      ### Volumes
+      {{- with $volumes }}
+      {{- with index . "selenium-hub" }}
+      {{ toYaml . | nindent 6 }}
+      {{- end }}
+      {{- end }}
+      ### Volumes - Custom
+      {{- if $basic.basic.customHelm }}
+      {{- with $custom.custom.volumes }}
+      {{ toYaml . | nindent 6 }}
+      {{- end }}
+      {{- end }}
+{{- end }}
+{{- end }}
+

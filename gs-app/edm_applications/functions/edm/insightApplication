@@ -1,0 +1,123 @@
+## Start Insight
+function startInsight()
+{
+	serverLog="$Application_Logs/insight.log"
+	shortDate=$(date +"%Y%m%d%H%M")
+	if test -f "$serverLog"; then
+		mv $serverLog $serverLog.$shortDate
+		touch $serverLog
+	fi
+
+	### Set user/pwd
+	export IBI_WFRS_SERVICE_USER=admin
+	export IBI_WFRS_SERVICE_PASS=admin
+	export IBI_REPOS_DB_USER=${GEMSchemaUser_INSIGHT}
+	export IBI_REPOS_DB_PASSWORD=${GEMSchemaUserPassword_INSIGHT}
+
+	### Start WebfocusServer
+	/ext/app/insight/ibi/srv91/wfs/bin/edastart -nohs -start >> $serverLog 2>&1
+	sleep 10
+	echoLog "INFO" "JVM - WebfocusServer - Started" "Insight" | tee -a ${Application_Logs}/jvmOperations.log
+    
+	### Start InsightMetadataCheck
+	echoLog "INFO" "JVM - InsightMetadataCheck - Started" "Insight" | tee -a ${Application_Logs}/jvmOperations.log
+    
+	db_check=$(/ext/app/insight/ibi/WebFOCUS91/utilities/dbupdate/db_check_empty.sh)
+
+	if [[ "$db_check" == *"Database already initialized"* ]] && [[ "$db_check" == *"$GEMSchemaOwner_INSIGHT"* ]];then
+		echoLog "INFO" "Tables - Creation - Skipped" "Insight" | tee -a ${Application_Logs}/jvmOperations.log
+	else
+		/ext/app/insight/ibi/WebFOCUS91/utilities/WFReposUtil/WFReposUtilCMDLine.sh create_insert off ${GEMSchemaUser_INSIGHT} ${GEMSchemaUserPassword_INSIGHT} "admin" "admin" >/dev/null 2>&1
+		echoLog "INFO" "Tables - Creation - Completed" "Insight" | tee -a ${Application_Logs}/jvmOperations.log
+		sleep 5
+	fi
+	echoLog "INFO" "JVM - InsightMetadataCheck - Completed" "Insight" | tee -a ${Application_Logs}/jvmOperations.log
+
+	### Start InsightClient
+	echoLog "INFO" "JVM - InsightClient - Started" "Insight" | tee -a ${Application_Logs}/jvmOperations.log
+	/ext/app/insight/ibi/tomcat/bin/startup.sh >> $serverLog 2>&1
+	echoLog "INFO" "JVM - InsightClient - Completed" "Insight" | tee -a ${Application_Logs}/jvmOperations.log
+
+	### Start ReportCaster
+	echoLog "INFO" "JVM - ReportCaster - Started" "Insight" | tee -a ${Application_Logs}/jvmOperations.log
+	/ext/app/insight/ibi/WebFOCUS91/ReportCaster/bin/schbkr >> $serverLog 2>&1 &
+	echoLog "INFO" "JVM - ReportCaster - Completed" "Insight" | tee -a ${Application_Logs}/jvmOperations.log
+}
+
+## Start Insight
+function configureInsight()
+{
+	mount_zip_file=/ext/app/insight_installer/ibi.zip
+	insight_zip_file=/ext/app/insight_installer/insight_installer.zip
+	install_cfg_template=/ext/app/insight/ibi/WebFOCUS91/config/install.cfg.template
+	edaserve_cfg_template=/ext/app/insight/ibi/srv91/wfs/bin/edaserve.cfg.template
+	tomcat_conf_template=/ext/app/insight/ibi/tomcat/conf/server.xml.template
+	webfocusclient_log_template=/ext/app/insight/ibi/WebFOCUS91/webapps/webfocus/WEB-INF/web.xml.template
+	tomcat_log_template=/ext/app/insight/ibi/tomcat/conf/logging.properties.template
+	reportcaster_log_template=/ext/app/insight/ibi/WebFOCUS91/ReportCaster/cfg/log4j2.xml.template
+	tomcat_conf=/ext/app/insight/ibi/tomcat/conf/server.xml
+	install_cfg=/ext/app/insight/ibi/WebFOCUS91/config/install.cfg
+	edaserve_cfg=/ext/app/insight/ibi/srv91/wfs/bin/edaserve.cfg
+	webfocusclient_log=/ext/app/insight/ibi/WebFOCUS91/webapps/webfocus/WEB-INF/web.xml
+	tomcat_log=/ext/app/insight/ibi/tomcat/conf/logging.properties
+	reportcaster_log=/ext/app/insight/ibi/WebFOCUS91/ReportCaster/cfg/log4j2.xml
+
+	## Setup Insight Mount Configurations
+	if [ ! -d "$InsightMount" ]; then
+		mkdir -p $InsightMount
+		unzip "$mount_zip_file" -d "$InsightMount" > /dev/null
+	fi
+
+	## Setup Insight
+	unzip "$insight_zip_file" -d "$InsightHome" > /dev/null
+
+	## Create Softlinks
+	cd /ext/app/insight/ibi/WebFOCUS91
+	ln -s /${mount_home}/app/insight/ibi/WebFOCUS91/config config
+
+	chmod -R 777 /ext/app/insight/ibi/WebFOCUS91
+
+    ##Logging details
+	export Tomcat_Logs_Dir=/${logs_home}/logs/UtilityApplications/Insight/tomcat
+	export InsightClient_Logs_Dir=/${logs_home}/logs/UtilityApplications/Insight/insightclient
+	export WebfocusServer_Logs_Dir=/${logs_home}/logs/UtilityApplications/Insight/webfocuserver
+	export ReportCaster_Logs_Dir=/${logs_home}/logs/UtilityApplications/Insight/reportcaster
+
+	mkdir -p $Tomcat_Logs_Dir
+	mkdir -p $InsightClient_Logs_Dir
+	mkdir -p $WebfocusServer_Logs_Dir
+	mkdir -p $ReportCaster_Logs_Dir
+
+	##ProfileCall
+	configureInsightProfiles $SSL_Argument_JDBC
+
+	##Replace variables in the configuration files
+	envsubst < $install_cfg_template > $install_cfg
+	envsubst < $edaserve_cfg_template > $edaserve_cfg
+	envsubst < $tomcat_conf_template > $tomcat_conf
+	envsubst < $webfocusclient_log_template > $webfocusclient_log
+	envsubst < $tomcat_log_template > $tomcat_log
+	envsubst < $reportcaster_log_template > $reportcaster_log
+}
+
+##configureInsightProfiles
+function configureInsightProfiles()
+{
+	edaprof_file=/ext/app/insight/ibi/srv91/wfs/etc/edasprof.prf
+	rm -f $edaprof_file
+	touch $edaprof_file
+	SSL_Argument_JDBC_Prof="${1//&/&|}"
+
+	folders=$(find "$Approot_Dir_INSIGHT" -mindepth 1 -maxdepth 1 -type d -exec basename {} \;)
+	echo 'APP PATH foccache '$folders'' >> $edaprof_file
+	echo -e "" >> $edaprof_file
+    
+	. /etc/edm/secret/edm-applications-secret.env
+	user="${GEMSchemaUser_GC}"
+	password="${GEMSchemaUserPassword_GC}"
+
+	echo 'ENGINE SQLPSTGR SET CONNECTION_ATTRIBUTES_EXT {  "name": "CONGSO_PS","server": "jdbc:'${database_connection_provider}''${DatabaseHost_Schema_INSIGHT}':'${DatabasePort_Schema_INSIGHT}'/'${DatabaseService_Schema_INSIGHT}'?autosave=conservative'${SSL_Argument_JDBC_Prof}'",
+	"security_type": "explicit",
+	"credentials": {"user": "'$user'","password": "'$password'"}}
+	END' >> $edaprof_file
+}

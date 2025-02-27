@@ -1,0 +1,42 @@
+### Basic, Annotations
+{{- $basic := include "basic" . | fromYaml }}
+{{- if $basic.basic.externalDns }}
+{{- if eq "gcp" $basic.basic.cloud.option }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: external-dns
+spec:
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: external-dns
+  template:
+    metadata:
+      labels:
+        app: external-dns
+    spec:
+      {{- with $basic.basic.cluster.node }}
+      {{ toYaml . | nindent 6 }}
+      {{- end }}
+      serviceAccountName: {{ $basic.basic.environment }}-external-dns
+      containers:
+      - name: external-dns
+        image: registry.k8s.io/external-dns/external-dns:v0.13.6
+        args:
+        - --log-format=text
+        - --source=service
+        - --source=ingress
+        - --provider=google
+        - --policy=upsert-only # would prevent ExternalDNS from deleting any records, omit to enable full synchronization
+        - --registry=noop
+        {{- if eq $.Values.ingresses.lb.scheme "internal" }}
+        - --google-zone-visibility=private # only look at public hosted zones (valid values are public, private or no value for both)
+        {{- else }}
+        - --google-zone-visibility=public # only look at public hosted zones (valid values are public, private or no value for both)
+        {{- end }}
+        - --domain-filter={{ $.Values.ingresses.lb.hostedZoneName }}
+        #- --txt-owner-id={{ $.Values.ingresses.lb.hostedZoneId }}
+{{- end }}    
+{{- end }}

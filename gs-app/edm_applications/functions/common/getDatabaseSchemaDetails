@@ -1,0 +1,12 @@
+### Get Database schema details
+function getDatabaseSchemaDetails()
+{
+	schemaReference="$1"
+	for databaseSchemaDetail in ${databaseSchemaDetails}
+	do
+		schemaReferenceFound=`echo ${databaseSchemaDetail} | cut -d ":" -f 1`
+		if [ "${schemaReference}" == "${schemaReferenceFound}" ]; then
+			getDatabaseSchemaOwnerUsersDetails ${databaseSchemaDetail}
+		fi
+	done
+}

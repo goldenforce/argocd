@@ -1,0 +1,327 @@
+### Basic, Annotations
+{{- $basic := include "basic" . | fromYaml }}
+{{- $annotationsLabels := include "annotationsLabels" . | fromYaml }}
+{{- $annotationsLabelsService := include "annotationsLabelsService" . | fromYaml }}
+### Applications
+{{- $applications := include "applications" . | fromYaml }}
+### Ingresses
+{{- $ingresses := include "ingresses" . | fromYaml }}
+### Init container
+{{- $initContainer := include "initContainer" . | fromYaml }}
+### Volume Mounts
+{{- $volumeMounts := include "volumeMounts" . | fromYaml }}
+### Volumes
+{{- $volumes := include "volumes" . | fromYaml }}
+### Checksum
+{{- $checkSum := include "checkSum" . | fromYaml }}
+### Custom
+{{- $custom := include "custom" . | fromYaml }}
+###
+{{- if $basic.basic.processApplications }}
+###
+{{- range $k, $v := $applications.applications -}}
+{{- if eq "Jobscheduler" $k }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ lower $k }}
+  annotations:
+    {{- with $annotationsLabelsService.service.annotations }}
+    {{ toYaml . | nindent 4 }}
+    {{- end }}
+
+    ### Openshift
+    {{- if eq $.Values.common.cloud "openshift" }}
+    {{- if eq $.Values.ingresses.ingress.ui.ingressClassName "openshift-default" }}
+    service.beta.openshift.io/serving-cert-secret-name: {{ printf "edm-openshift-%s" (lower $k) }}
+    {{- end }}
+    {{- end }}
+  labels:
+    cluster: {{ lower $k }}
+    app: {{ lower $k }}
+    {{- with $annotationsLabels.common.labels }}
+    {{ toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  ports:
+  - name: http
+    port: 7500
+    protocol: TCP
+    targetPort: 7500
+  selector:
+    cluster: {{ lower $k }}
+  sessionAffinity: ClientIP
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ lower $k }}
+  annotations:
+    {{- with $annotationsLabels.common.annotations }}
+    {{ toYaml . | nindent 4 }}
+    {{- end }}
+    checksum/edm-applications-checkSum: {{ $checkSum  | toJson | sha256sum }}
+  labels:
+    cluster: {{ lower $k }}
+    app: {{ lower $k }}
+    {{- with $annotationsLabels.common.labels }}
+    {{ toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  serviceName: {{ lower $k }}
+  replicas: 1
+  selector:
+    matchLabels:
+      cluster: {{ lower $k }}
+      app: {{ lower $k }}
+      {{- with $annotationsLabels.common.labels }}
+      {{ toYaml . | nindent 6 }}
+      {{- end }}
+  template:
+    metadata:
+      name: {{ lower $k }}
+      annotations:
+        {{- with $annotationsLabels.common.annotations }}
+        {{ toYaml . | nindent 8 }}
+        {{- end }}
+        checksum/edm-applications-checkSum: {{ $checkSum  | toJson | sha256sum }}
+      labels:
+        cluster: {{ lower $k }}
+        app: {{ lower $k }}
+        {{- with $annotationsLabels.common.labels }}
+        {{ toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      securityContext:
+        runAsUser: {{ $v.securityContext.runAsUser }}
+        runAsGroup: {{ $v.securityContext.runAsGroup }}
+        fsGroup: {{ $v.securityContext.fsGroup }}
+        fsGroupChangePolicy: {{ $v.securityContext.fsGroupChangePolicy }}
+      automountServiceAccountToken: true
+      serviceAccountName: {{ $basic.basic.cluster.serviceAccountName }}
+      terminationGracePeriodSeconds: 0
+      ### Image Pull Secret
+      {{- if $basic.basic.imagePullSecretsEnabled }}
+      imagePullSecrets:
+        - name: {{ $basic.basic.imagePullSecretsName }}
+      {{- end }}
+      ### Node Affinity
+      {{- with $basic.basic.cluster.node }}
+      {{ toYaml . | nindent 6 }}
+      {{- end }}
+      ### Init container
+      {{- with $initContainer }}
+      {{- with index . $k }}
+      {{ toYaml . | nindent 6 }}
+      {{- end }}
+      {{- end }}
+      ### Init container - Custom
+      {{- if $basic.basic.customHelm }}
+      {{- with $custom.custom.initContainers }}
+      {{ toYaml . | nindent 6 }}
+      {{- end }}
+      {{- end }}
+      containers:
+      - name: {{ lower $k }}
+        image: {{ $applications.applications.Jobscheduler.image }}
+        imagePullPolicy: {{ $basic.basic.imagePullPolicy }}
+        envFrom:
+        - configMapRef:
+            name: edm-applications-config-map
+            optional: false
+        env:
+        - name: application_image
+          value: {{ $applications.applications.Jobscheduler.image | quote }}
+        {{- if $basic.basic.customHelm }}
+        {{- with $custom.custom.env }}
+        {{ toYaml . | nindent 8 }}
+        {{- end }}
+        {{- end }}
+        ports:
+        - containerPort: 4446
+          name: http
+          protocol: TCP
+        resources:
+          limits:
+            cpu: {{ $v.resources.limits.cpu }}
+            memory: {{ $v.resources.limits.memory }}
+          requests:
+            cpu: {{ $v.resources.requests.cpu }}
+            memory: {{ $v.resources.requests.memory }}
+        command: ["/bin/bash", "-c"]
+        args: 
+        - |
+          ### Load Scripts
+          . /etc/edm/functions/edm_functions.sh
+
+          ## Set Home
+          cd /ext/app
+
+          ### Check if Database running
+          while true;
+          do
+             ## Check if Database/Schemas accessible
+             if [ "$(checkDatabaseSchemasVerify)" == "Completed" ]; then
+                touch /tmp/healthy
+                break
+             fi
+             echo "Job Scheduler schema not created..."
+             sleep 20
+          done
+
+          ### Job scheduler variables
+          Keycloak_Realm={{ $basic.basic.realm }}
+          Keycloak_Client_Secret=${Keycloak_client_secret}
+          Orchestrator_Service_User=${Service_Account_User}
+          Orchestrator_Service_Password=${Service_Account_Password}
+          
+          ### Check Database Type
+          if [ "$(DatabaseType)" == "postgresql" ]; then
+             cp /etc/edm/configurations/jobscheduler/hibernate_cfg_postgresql.xml /ext/app/jobscheduler/base/sos-berlin.com/joc/resources/joc/hibernate.cfg.xml
+          fi
+          if [ "$(DatabaseType)" == "oracle" ]; then
+             cp /etc/edm/configurations/jobscheduler/hibernate_cfg_oracle.xml /ext/app/jobscheduler/base/sos-berlin.com/joc/resources/joc/hibernate.cfg.xml
+          fi
+          
+          ### Set Schema details
+          hibernateFile="/ext/app/jobscheduler/base/sos-berlin.com/joc/resources/joc/hibernate.cfg.xml"
+
+          sed -i 's/#{schemaJobschedulerUser}/'"${SchemaUser_JOBSCHEDULER}"'/g' $hibernateFile
+          sed -i 's/#{schemaJobschedulerPassword}/'"${SchemaPassword_JOBSCHEDULER}"'/g' $hibernateFile
+          sed -i 's/#{DatabaseHost_Schema_JOBSCHEDULER}/'"${DatabaseHost_Schema_JOBSCHEDULER}"'/g' $hibernateFile
+          sed -i 's/#{DatabasePort_Schema_JOBSCHEDULER}/'"${DatabasePort_Schema_JOBSCHEDULER}"'/g' $hibernateFile
+          sed -i 's/#{DatabaseService_Schema_JOBSCHEDULER}/'"${DatabaseService_Schema_JOBSCHEDULER}"'/g' $hibernateFile
+          sed -i 's~#{SSL_Argument_JDBC}~'"${SSL_Argument_JDBC//&/\\&amp;}"'~g' $hibernateFile
+          
+          ## Logs
+          serverLog="/${logs_home}/logs/UtilityApplications/Jobscheduler/Jobscheduler.log"
+          mkdir -p "$(dirname "$serverLog")"
+          shortDate=$(date +"%Y%m%d%H%M")
+          if test -f "$serverLog"; then
+             mv $serverLog $serverLog.$shortDate
+          fi		 
+
+          ## Start
+          echoLog "INFO" "Jobscheduler - $(hostname) - Image - Repository - ${application_image}" "Utility Application" "True" | tee -a /$logs_home/logs/UtilityApplications/UtilityApplications.log
+  
+          ## Run infinite
+          processStarted="False"
+          while true;
+          do
+             if [ -f "/${logs_home}/logs/Initialize/servers/restartJobscheduler" ]; then
+                pids=$(pgrep -f "jobsc" | grep -v '^1$')
+                for pid in $pids; do kill -9 $pid; done
+                rm -rf /${logs_home}/logs/Initialize/servers/restartJobscheduler
+                echoLog "INFO" "Jobscheduler - $(hostname) - Stopped" "Utility Application" "True" | tee -a /$logs_home/logs/UtilityApplications/UtilityApplications.log
+                processStarted="False"
+                sleep 20
+             fi
+             if [ "$processStarted" == "False" ]; then
+                /ext/app/jobscheduler/start.sh > $serverLog 2>&1 &
+                processStarted="True"
+                echoLog "INFO" "Jobscheduler - $(hostname) - Started" "Utility Application" "True" | tee -a /$logs_home/logs/UtilityApplications/UtilityApplications.log
+             fi
+             sleep 20
+          done
+        readinessProbe:
+          failureThreshold: 5
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 1
+          tcpSocket:
+            port: 4446
+        ### Volume Mounts
+        {{- with $volumeMounts }}
+        {{- with index . $k }}
+        {{ toYaml . | nindent 8 }}
+        {{- end }}
+        {{- end }}
+        ### Volume Mounts - Custom
+        {{- if $basic.basic.customHelm }}
+        {{- with $custom.custom.volumeMounts }}
+        {{ toYaml . | nindent 8 }}
+        {{- end }}
+        {{- end }}
+      - name: {{ lower $k }}-keycloak-gatekeeper
+        image: {{ $applications.applications.Jobscheduler.imageGatekeeper }}
+        imagePullPolicy: {{ $basic.basic.imagePullPolicy }}
+        command: ["/bin/sh", "-c"]
+        env:
+        {{- if $basic.basic.customHelm }}
+        {{- with $custom.custom.env }}
+        {{ toYaml . | nindent 8 }}
+        {{- end }}
+        {{- end }}
+        envFrom:
+        - configMapRef:
+            name: edm-applications-config-map
+            optional: false
+        args:
+        - |
+          ### Load Scripts
+          . /etc/edm/functions/edm_functions.sh
+
+          ### Multiple Roles formatted
+          multipleRoles={{ $v.roles | quote }}
+          roles=$(echo "$multipleRoles" | sed 's/\([^,]*\)/"\1"/g' | tr -d '\n') 
+
+          ### Configuration file
+          cat <<EOF > /ext/app/keycloak_gatekeeper/oauth2-proxy.conf
+            provider="keycloak-oidc"
+            client_id="{{ $k }}"
+            client_secret="${Keycloak_client_secret}"
+            proxy_prefix="/joc/oauth2"
+            upstreams=["http://127.0.0.1:4446"]
+            oidc_issuer_url="https://{{ $ingresses.ingresses.ui.host }}/auth/realms/{{ $basic.basic.realm }}"
+            profile_url="https://{{ $ingresses.ingresses.ui.host }}/auth/realms/{{ $basic.basic.realm }}/protocol/openid-connect/userinfo"
+            allowed_roles=[${roles}]
+            https_address="0.0.0.0:7500"
+            cookie_secret="${Keycloak_cookie_secret}"
+            email_domains=["*"]
+            insecure_oidc_allow_unverified_email="true"
+            skip_provider_button="true"
+            custom_templates_dir="/ext/app/keycloak_gatekeeper"
+            ssl_insecure_skip_verify="true"
+            skip_oidc_discovery="true"
+            login_url="https://{{ $ingresses.ingresses.ui.host }}/auth/realms/{{ $basic.basic.realm }}/protocol/openid-connect/auth"
+            redeem_url="https://{{ $ingresses.ingresses.ui.host }}/auth/realms/{{ $basic.basic.realm }}/protocol/openid-connect/token"
+            oidc_jwks_url="https://{{ $ingresses.ingresses.ui.host }}/auth/realms/{{ $basic.basic.realm }}/protocol/openid-connect/certs"
+            tls_cert_file="/ext/app/protected/Certificates/ui/certificate.crt"
+            tls_key_file="/ext/app/protected/Certificates/ui/private.key"
+            ssl_upstream_insecure_skip_verify="true"
+          EOF
+          ### Start Oauth proxy
+          cd /ext/app/keycloak_gatekeeper
+          ./oauth2-proxy --config /ext/app/keycloak_gatekeeper/oauth2-proxy.conf
+        ports:
+        - containerPort: 7500
+          name: http
+          protocol: TCP
+        ### Volume Mounts
+        {{- with $volumeMounts }}
+        {{- with index . $k }}
+        {{ toYaml . | nindent 8 }}
+        {{- end }}
+        {{- end }}
+        ### Volume Mounts - Custom
+        {{- if $basic.basic.customHelm }}
+        {{- with $custom.custom.volumeMounts }}
+        {{ toYaml . | nindent 8 }}
+        {{- end }}
+        {{- end }}
+      ### Volumes
+      {{- with $volumes }}
+      {{- with index . $k }}
+      {{ toYaml . | nindent 6 }}
+      {{- end }}
+      {{- end }}
+      ### Volumes - Custom
+      {{- if $basic.basic.customHelm }}
+      {{- with $custom.custom.volumes }}
+      {{ toYaml . | nindent 6 }}
+      {{- end }}
+      {{- end }}
+{{- end }}
+{{- end }}
+{{- end }}

@@ -1,0 +1,216 @@
+### Basic, Annotations
+{{- $basic := include "basic" . | fromYaml }}
+{{- $annotationsLabels := include "annotationsLabels" . | fromYaml }}
+{{- $annotationsLabelsService := include "annotationsLabelsService" . | fromYaml }}
+### Applications
+{{- $applications := include "applications" . | fromYaml }}
+### Init container
+{{- $initContainer := include "initContainer" . | fromYaml }}
+### Volume Mounts
+{{- $volumeMounts := include "volumeMounts" . | fromYaml }}
+### Volumes
+{{- $volumes := include "volumes" . | fromYaml }}
+### Checksum
+{{- $checkSum := include "checkSum" . | fromYaml }}
+### Custom
+{{- $custom := include "custom" . | fromYaml }}
+###
+{{- range $k, $v := $applications.applications -}}
+{{- if eq "EDMA" $k }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: selenium-chrome-node
+  annotations:
+    {{- with $annotationsLabelsService.service.annotations }}
+    {{ toYaml . | nindent 4 }}
+    {{- end }}
+
+    ### Openshift
+    {{- if eq $.Values.common.cloud "openshift" }}
+    {{- if eq $.Values.ingresses.ingress.ui.ingressClassName "openshift-default" }}
+    service.beta.openshift.io/serving-cert-secret-name: {{ printf "edm-openshift-%s" "selenium-chrome-node" }}
+    {{- end }}
+    {{- end }}
+  labels:
+    cluster: selenium-chrome-node
+    app: selenium-chrome-node
+    {{- with $annotationsLabels.common.labels }}
+    {{ toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  ports:
+  - name: http
+    port: 5555
+    protocol: TCP
+    targetPort: 5555
+  selector:
+    cluster: selenium-chrome-node
+  sessionAffinity: ClientIP
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: selenium-chrome-node
+  annotations:
+    {{- with $annotationsLabels.common.annotations }}
+    {{ toYaml . | nindent 4 }}
+    {{- end }}
+    checksum/edm-applications-checkSum: {{ $checkSum  | toJson | sha256sum }}
+  labels:
+    cluster: selenium-chrome-node
+    app: selenium-chrome-node
+    {{- with $annotationsLabels.common.labels }}
+    {{ toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  replicas: {{ $v.replicas }}
+  selector:
+    matchLabels:
+      cluster: selenium-chrome-node
+      app: selenium-chrome-node
+      {{- with $annotationsLabels.common.labels }}
+      {{ toYaml . | nindent 6 }}
+      {{- end }}
+  template:
+    metadata:
+      annotations:
+        checksum/edm-applications-checkSum: {{ $checkSum  | toJson | sha256sum }}
+        {{- with $annotationsLabels.common.annotations }}
+        {{ toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        cluster: selenium-chrome-node
+        app: selenium-chrome-node
+        {{- with $annotationsLabels.common.labels }}
+        {{ toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      ### Image Pull Secret
+      {{- if $basic.basic.imagePullSecretsEnabled }}
+      imagePullSecrets:
+        - name: {{ $basic.basic.imagePullSecretsName }}
+      {{- end }}
+      ### Node Affinity
+      {{- with $basic.basic.cluster.node }}
+      {{ toYaml . | nindent 6 }}
+      {{- end }}
+      securityContext:
+        runAsUser: {{ $v.securityContext.runAsUser }}
+        runAsGroup: {{ $v.securityContext.runAsGroup }}
+        fsGroup: {{ $v.securityContext.fsGroup }}
+        fsGroupChangePolicy: {{ $v.securityContext.fsGroupChangePolicy }}
+      automountServiceAccountToken: true
+      serviceAccountName: {{ $basic.basic.cluster.serviceAccountName }}
+      terminationGracePeriodSeconds: 0
+      containers:
+      - name: selenium-chrome-node
+        image: {{ $.Values.selenium.node.image }}
+        imagePullPolicy: {{ $basic.basic.imagePullPolicy }}
+        env:
+          - name: SE_EVENT_BUS_HOST
+            value: "selenium-hub"
+          - name: SE_EVENT_BUS_PUBLISH_PORT
+            value: "4442"
+          - name: SE_EVENT_BUS_SUBSCRIBE_PORT
+            value: "4443"
+          - name: SE_NODE_MAX_SESSIONS
+            value: "1"
+          - name: SE_NODE_SESSION_TIMEOUT
+            value: "999999"
+          - name: HOME
+            value: "/ext/app"
+          - name: logs_home
+            value: {{ $basic.basic.artefacts.pathLogs }}
+        command: ["/bin/sh", "-c"]
+        args: 
+        - |
+          ## Bash profile
+          cd /ext/app
+          . ./.bash_profile
+
+          ## Initialize logs
+          HostAnyCase="$HOSTNAME"
+          Host="${HostAnyCase,,}"
+          mkdir -p /${logs_home}/logs/UtilityApplications/Selenium/${Host}
+          logFile="/${logs_home}/logs/UtilityApplications/Selenium/${Host}/selenium-node.log"
+
+          ## Configuration
+          cat <<EOF > /ext/app/selenium/conf.toml
+          [events]
+          publish = "tcp://selenium-hub:4442"
+          subscribe = "tcp://selenium-hub:4443"
+
+          [node]
+          grid-url = "http://selenium-hub:4444"
+          session-timeout = 2000
+          override-max-sessions = false
+          detect-drivers = false
+          drain-after-session-count = 0
+          max-sessions = 1
+          enable-managed-downloads = false
+
+          [logging]
+          http-logs = true
+          log-file = "${logFile}"
+          log-level = "INFO"          
+
+          [[node.driver-configuration]]
+          display-name = "chrome"
+          stereotype = '{"browserName": "chrome","goog:chromeOptions": {"args": ["--headless", "--remote-allow-origins=*", "--disable-dev-shm-usage", "--safebrowsing-disable-auto-update", "--disable-background-networking", "--no-proxy-server", "--disable-extensions", "--dns-prefetch-disable", "--disable-gpu", "--force-device-scale-factor=1"]},"platformName": "linux"}'
+          max-sessions = 1
+          EOF
+
+          ## Start Hub
+          cd /ext/app/selenium
+          export START_XVFB=false
+          #java -jar selenium-server*.jar node --config /ext/app/selenium/conf.toml
+          java -Dwebdriver.http.factory=jdk-http-client -jar selenium-server*.jar --ext selenium-http-jdk*.jar node --session-timeout 2000 --config /ext/app/selenium/conf.toml           
+          
+        ports:
+        - containerPort: 5555
+          name: http
+          protocol: TCP
+        resources:
+          limits:
+            memory: {{ $.Values.selenium.node.resources.limits.memory }}
+            cpu: {{ $.Values.selenium.node.resources.limits.cpu }}
+          requests:
+            memory: {{ $.Values.selenium.node.resources.requests.memory }}
+            cpu: {{ $.Values.selenium.node.resources.requests.cpu }}
+        ### Volume Mounts
+        {{- with $volumeMounts }}
+        {{- with index . "selenium-chrome-node" }}
+        {{ toYaml . | nindent 8 }}
+        {{- end }}
+        {{- end }}
+        ### Selenium Volume Mount
+        - mountPath: "/dev/shm"
+          name: "dshm"
+        ### Volume Mounts - Custom
+        {{- if $basic.basic.customHelm }}
+        {{- with $custom.custom.volumeMounts }}
+        {{ toYaml . | nindent 8 }}
+        {{- end }}
+        {{- end }}
+      ### Volumes
+      {{- with $volumes }}
+      {{- with index . "selenium-chrome-node" }}
+      {{ toYaml . | nindent 6 }}
+      {{- end }}
+      {{- end }}
+      ### Selenium Volume
+      - name: "dshm"
+        emptyDir: 
+          medium: "Memory"
+          sizeLimit: "2048Mi"
+      ### Volumes - Custom
+      {{- if $basic.basic.customHelm }}
+      {{- with $custom.custom.volumes }}
+      {{ toYaml . | nindent 6 }}
+      {{- end }}
+      {{- end }}
+---
+{{- end }}
+{{- end }}

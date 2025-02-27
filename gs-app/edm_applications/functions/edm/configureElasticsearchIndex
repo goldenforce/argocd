@@ -1,0 +1,36 @@
+### Update Elastic Search Index
+function configureElasticsearchIndex()
+{
+	## Initialize
+	configureElasticsearchIndexStatus="Failed"
+	configurePlatformStateSetTaskStatus="Failed"
+	
+	## Check Elasticsearch running
+	echoLog "INFO" "Job - $(hostname) - Image - Repository - ${application_image}" "Elasticsearch" "True" | tee -a ${configureElasticsearchIndexLogFile}
+	echoLog "INFO" "Check - Access - Started" "Elasticsearch" | tee -a $configureElasticsearchIndexLogFile
+	elasticsearchRunning=$(checkIfElasticsearchAccessible)
+	if [ "$elasticsearchRunning" == "False" ]; then
+		echoLog "ERROR" "Check - Access - Failed" "Elasticsearch" | tee -a $configureElasticsearchIndexLogFile
+		return
+	fi
+	echoLog "INFO" "Check - Access - Completed" "Elasticsearch" | tee -a $configureElasticsearchIndexLogFile
+
+	## Execute Elasticsearch index
+	dataPut=`cat ${configurations_folder}/elasticsearch/elasticsearchIndex.json`
+	cat ${configurations_folder}/elasticsearch/elasticsearchIndex.json > ${configureElasticsearchIndexWorkFolder}/work/elasticsearchIndex.json
+	user=${Elasticsearch_user}
+	password=${Elasticsearch_password}
+	userPasswordBaseEncoded=`echo '$user:$password' | base64`
+	curl --request PUT \
+		--url http://${KUBE_INTERNAL_LB_elastic}:${ELASTICSEARCH_MASTER_SERVICE_PORT}/${edm_elasticsearch_index_staging} \
+		--header "Authorization: Basic ${userPasswordBaseEncoded}" \
+		--header "Content-Type: application/json"  \
+		--data "$dataPut" >> ${configureElasticsearchIndexWorkFolder}/work/elasticsearch.out 2>>${configureElasticsearchIndexWorkFolder}/work/elasticsearch.out
+	echoLog "INFO" "Index - ${edm_elasticsearch_index_staging} - Completed" "Elasticsearch" | tee -a $configureElasticsearchIndexLogFile
+
+	## Final
+	configureElasticsearchIndexStatus="Completed"
+	
+	### Process Platform State
+	configurePlatformStateSetTask "configureElasticsearchIndex" "${edm_version}" "${configureElasticsearchIndexStatus}"
+}

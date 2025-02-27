@@ -1,0 +1,35 @@
+function identifierCheck() 
+{
+	identifierCheckStatus="Failed"
+	identifier=$3
+	if [ -z "$identifier" ]; then
+		echo "ERROR - Identifier Empty"
+		echo "ERROR - Identifier Empty - Failed  $(date +'%d-%b-%Y %T')"
+		echoLog "ERROR" "Identifier - Empty - Failed" "Job ${job_name}" >>$job_log
+		http_response=$(curl --insecure -X GET ${1} -H 'authorization: Bearer '${2}'' -H 'content-type: application/json' -s -o /dev/null -w "%{http_code}")
+		if [[ $http_response -eq 401 || $http_response -eq 403 ]]; then
+			echoLog "ERROR" "Identifier - Application Access - Failed" "Job ${job_name}" >>$job_log
+		elif [[ $http_response -eq 404 || $http_response -eq 000 ]]; then
+			echoLog "ERROR" "Identifier - Application Down - Failed" "Job ${job_name}" >>$job_log
+		fi
+		return
+	elif [ ! -z "$identifier" ]; then
+		if [[ "$identifier" != *identifier* || "$identifier" == *Error* || "$identifier" == *message* ]]; then
+			echo "ERROR - $identifier"
+			echo "ERROR - $identifier - Failed  $(date +'%d-%b-%Y %T')"
+			echoLog "ERROR" "Identifier - $identifier - Failed" "Job ${job_name}"  "True" >>$job_log
+			return
+		fi
+	fi
+
+	identifier=$(echo $identifier | awk -F\" '/identifier/{print $4}')
+	instanceIdLeng=$(echo $identifier | wc -m)
+	if [[ "$identifier" == *goldensource* ]] || [[ $instanceIdLeng -ne 17 ]]; then
+		echo "ERROR - $identifier Invalid"
+		echo "ERROR - $identifier Invalid - Failed  $(date +'%d-%b-%Y %T')"
+		echoLog "ERROR" "Identifier - $identifier - Failed" "Job ${job_name}" "True" >>$job_log
+		return
+	fi
+	identifierCheckStatus="Completed"
+	echoLog "INFO" "Identifier - $identifier - Completed" "Job ${job_name}" "True" >>$job_log
+}

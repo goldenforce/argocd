@@ -1,0 +1,39 @@
+### Create Platform State Table
+function createTablePlatformState()
+{
+	### Initialize
+	createTablePlatformStateWorkFolder="$1"
+	getDatabaseSchemaOwnerUsersDetails "PLATFORMSTATE"
+	
+
+	### Create Platform state table
+	createTablePlatformStateSQLFile="${createTablePlatformStateWorkFolder}/createTablePlatformState.sql"
+	createTablePlatformStateSQLError="${createTablePlatformStateWorkFolder}/createTablePlatformState.err"
+
+	### Create Schema SQL
+	cat > ${createTablePlatformStateSQLFile} <<- EOM
+		SET SERVEROUTPUT ON
+		DECLARE
+    		sql_command VARCHAR2(5000) := '';
+		BEGIN
+			sql_command := sql_command || 'CREATE TABLE ft_d_pflc ( ';
+			sql_command := sql_command || 'task VARCHAR2(256) NOT NULL, ';
+			sql_command := sql_command || 'task_version VARCHAR2(256) NOT NULL, ';
+			sql_command := sql_command || 'task_status VARCHAR2(256) DEFAULT ''Failed'' NOT NULL, ';
+			sql_command := sql_command || 'create_tms DATE DEFAULT SYSDATE NOT NULL, ';
+			sql_command := sql_command || 'last_chg_usr_id VARCHAR2(256) DEFAULT ''system'' NOT NULL, ';
+			sql_command := sql_command || 'CONSTRAINT ft_d_pflc_pk PRIMARY KEY (task) ';
+			sql_command := sql_command || ')';
+			EXECUTE IMMEDIATE sql_command;
+		EXCEPTION
+			WHEN OTHERS THEN
+				IF SQLCODE <> -00955 THEN
+					DBMS_OUTPUT.PUT_LINE('Error: ' || SQLERRM);
+				END IF;
+		END;
+		/
+		exit;
+	);
+	EOM
+	sqlplus ${GEMSchemaUser_PLATFORMSTATE}/${GEMSchemaUserPassword_PLATFORMSTATE}@${DatabaseName_Schema_GC} @${createTablePlatformStateSQLFile} > ${createTablePlatformStateSQLError} 2>>${createTablePlatformStateSQLError}
+}

@@ -1,0 +1,15 @@
+{{- if ((($.Values.persistentVolumeFsx).storageClassFsx).create) }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .Values.persistentVolumeFsx.storageClassFsx.name }}
+  namespace: {{ .Release.Namespace }}
+spec:
+  storageClassName: byo-storage-storageclass
+  volumeName: {{ .Values.persistentVolumeFsx.volumename }}
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: {{ .Values.persistentVolumeFsx.storage }}
+{{- end }}
