@@ -660,13 +660,13 @@ jobs:
     create: true
   applications:
     gem:
-      enabled: true
+      enabled: false
     domains:
-      enabled: true
+      enabled: false
     elasticsearchIndex:
       enabled: false
     edma:
-      enabled: true
+      enabled: false
     reorgDatabase: 
       enabled: false
       ### Reorg execute - valid options ["None", "va", "vf", "rt", "va,rt"] 
