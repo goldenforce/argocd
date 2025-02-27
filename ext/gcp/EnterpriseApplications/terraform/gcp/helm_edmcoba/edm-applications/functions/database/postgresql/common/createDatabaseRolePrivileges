@@ -1,0 +1,32 @@
+### Create Role Privileges
+function createDatabaseRolePrivileges()
+{
+	### Create Role Privileges
+	roleName="$1"
+	schema="$2"
+	createRolePrivilegesWorkFolder="$3"
+	tableSpace="$4"
+	
+	createDatabaseRolePrivilegesSQLFile="${createRolePrivilegesWorkFolder}/createRolePrivileges-${roleName}.sql"
+	createDatabaseRolePrivilegesSQLError="${createRolePrivilegesWorkFolder}/createRolePrivileges-${roleName}.err"
+
+	### Create Schema SQL
+	cat > ${createDatabaseRolePrivilegesSQLFile} <<- EOM
+		/* Set messages */
+		set client_min_messages = ERROR;
+		/* Grant Privileges to user */
+		GRANT CONNECT ON DATABASE ${Database_Name} TO ${roleName};
+		GRANT ALL PRIVILEGES ON DATABASE ${Database_Name} TO ${roleName};
+		GRANT USAGE, CREATE ON SCHEMA ${schema} TO ${roleName};
+		GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA ${schema} TO ${roleName};
+		GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA ${schema} TO ${roleName};
+		GRANT EXECUTE ON ALL PROCEDURES IN SCHEMA ${schema} TO ${roleName};
+		GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA ${schema} TO ${roleName};
+		ALTER ROLE ${roleName} IN DATABASE ${Database_Name} SET search_path = ${schema};
+		ALTER DEFAULT PRIVILEGES FOR USER ${schema} IN SCHEMA ${schema} GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO ${roleName};
+		ALTER DEFAULT PRIVILEGES FOR USER ${schema} IN SCHEMA ${schema} GRANT USAGE, SELECT ON SEQUENCES TO ${roleName};
+		ALTER DEFAULT PRIVILEGES FOR USER ${schema} IN SCHEMA ${schema} GRANT EXECUTE ON FUNCTIONS TO ${roleName};		
+	EOM
+	export PGPASSWORD=${Database_Owner_Password}
+	psql "${SSL_Argument} host=${Database_Host} port=${Database_Port} user=${Database_Owner_User} dbname=${Database_Name}" -f ${createDatabaseRolePrivilegesSQLFile} > ${createDatabaseRolePrivilegesSQLError} 2>>${createDatabaseRolePrivilegesSQLError}
+}

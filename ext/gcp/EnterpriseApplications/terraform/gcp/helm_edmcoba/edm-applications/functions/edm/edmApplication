@@ -1,0 +1,183 @@
+#################### JBoss JVM Functions - begins
+### Create ODBC ini file
+function createTNSNamesOra()
+{
+	mkdir -p /tmp
+	echo "${DatabaseService_Schema_GC} ="																				>  /tmp/tnsnames.ora
+	echo "  (DESCRIPTION ="																								>> /tmp/tnsnames.ora 
+	echo "     (ADDRESS_LIST ="																							>> /tmp/tnsnames.ora
+	echo "        (ADDRESS = (PROTOCOL = TCP)(HOST = ${DatabaseHost_Schema_GC})(PORT = ${DatabasePort_Schema_GC}))"		>> /tmp/tnsnames.ora
+	echo "     )"																										>> /tmp/tnsnames.ora
+	echo "     (CONNECT_DATA ="																							>> /tmp/tnsnames.ora
+	echo "        (SERVICE_NAME = ${DatabaseName_Schema_GC})"															>> /tmp/tnsnames.ora
+	echo "     )"																										>> /tmp/tnsnames.ora
+	echo "  )"																											>> /tmp/tnsnames.ora
+}
+
+function createODBCIni()
+{
+	mkdir -p /tmp
+	echo "[ODBC]"                                 >  /tmp/odbc.ini
+	echo "Trace =no"                              >> /tmp/odbc.ini 
+	echo "TraceFile = /tmp/odbc.out"              >> /tmp/odbc.ini
+	echo "Pooling = Yes"                          >> /tmp/odbc.ini
+	echo ""                                       >> /tmp/odbc.ini
+	DatabaseService="[${DatabaseService_Schema_GC}]"
+	echo $DatabaseService                         >> /tmp/odbc.ini
+	echo 'Description = "GoldenSource EDM"'       >> /tmp/odbc.ini
+	echo "Driver = /usr/lib64/psqlodbcw.so"       >> /tmp/odbc.ini
+	DatabaseHost="Servername = ${DatabaseHost_Schema_GC}"
+	echo $DatabaseHost                            >> /tmp/odbc.ini
+	DatabasePort="Port = ${DatabasePort_Schema_GC}"
+	echo $DatabasePort                            >> /tmp/odbc.ini
+	echo "Protocol = 7.4-2"                       >> /tmp/odbc.ini
+	DatabaseName="Database = ${DatabaseName_Schema_GC}"
+	echo $DatabaseName                            >> /tmp/odbc.ini
+	if [ "${DatabaseSSL}" == "require" ]; then
+		echo "sslmode = require"                   >> /tmp/odbc.ini
+		echo "pqOpt = sslrootcert=/ext/app/protected/Certificates/db/ODBC/${Certificate_databaseServer_odbcRoot} sslcert=/ext/app/protected/Certificates/db/ODBC/${Certificate_databaseServer_odbcCertificate} sslkey=/ext/app/protected/Certificates/db/ODBC/${Certificate_databaseServer_odbcKey}" >> /tmp/odbc.ini
+	else
+		echo "#{ssl}sslmode = require"             >> /tmp/odbc.ini
+	fi
+}
+
+## log JVM Crash
+function logJbossCrash()
+{
+	jbossCrash="False"
+	if [ "$jbossStartOption" != "Local" ]; then
+		echoLog "ERROR" "${jboss_instance_name} - $(hostname) - Crashed" "JVM Operation" "True" | tee -a $Application_Logs/jvmOperations.log > /dev/null
+		echoLog "ERROR" "${jboss_instance_name} - $(hostname) - Crashed" "EDM Application" "True"  | tee -a /$logs_home/logs/EdmApplications/EdmApplications.log > /dev/null
+		now=`date -u '+%Y-%m-%d_%H-%M'`
+		mkdir -p ${Application_Logs}/crashLogs/${now}
+		find "${Application_Logs}" -maxdepth 1 -type f ! -name 'jvmOperations.log' -exec mv {} "${Application_Logs}/crashLogs/${now}/" \;
+		jbossCrash="True" 
+        rm -rf /tmp/ready
+        rm -rf /tmp/liveness
+	fi
+}
+
+### Check to start Local or Mount
+function checkJbossStartOption()
+{
+	jbossStartOption="Local"
+	if [ "$jbossRunningOption" == "Local" ]; then
+		jbossRunning="False"
+	else
+		jbossRunning=$(checkIfJbossAccessible 5)
+	fi
+
+	## Check if schemas are accessible - start local if not accessible
+	databaseSchemasAccessible=$(checkDatabaseSchemasVerify)
+	if [ ! "${databaseSchemasAccessible}" == "Completed" ]; then
+		return
+	fi
+
+    ## Check if mount is available
+	if [ -f /${scripts_home}/start${jboss_instance_name}.sh ]; then
+		if [ "${functional_class}" == "keycloak" ]; then
+			jbossStartOption="Mount"
+		else
+			if [ ! -z "$installed_edm_version" ]; then
+				jbossStartOption="Mount"
+			fi
+		fi
+	fi
+
+	## Check for Restart
+	if [ -f "/${logs_home}/logs/Initialize/servers/restart${jboss_instance_name}" ]; then
+		sleep 90
+		jbossStartOption="Crash"
+        rm -rf /tmp/ready
+        rm -rf /tmp/liveness
+		rm -rf /${logs_home}/logs/Initialize/servers/restart${jboss_instance_name}
+		echoLog "INFO" "${jboss_instance_name} - $(hostname) - Restart" "JVM Operation" "True" | tee -a $Application_Logs/jvmOperations.log > /dev/null
+		echoLog "INFO" "${jboss_instance_name} - $(hostname) - Restart" "EDM Application" "True" | tee -a /$logs_home/logs/EdmApplications/EdmApplications.log > /dev/null
+		return
+	fi
+
+	############################ Check Servers are running  
+	if [ "${functional_class}" == "keycloak" ] || [ "${edm_version}" == "${installed_edm_version}" ]; then
+		if [ "$jbossStartOption" == "$jbossRunningOption" ]; then
+			if [ "${jbossRunning}" == "True" ]; then
+				jbossStartOption="None"
+			else
+				logJbossCrash
+				if [ "$jbossCrash" == "False" ]; then
+					return
+				fi
+				jbossStartOption="Crash"
+				return
+			fi
+		fi
+		return
+	fi
+	############################  
+
+	## Handle Gem failure
+	if [ ! "${edm_version}" == "${installed_edm_version}" ]; then
+		jbossStartOption="Local"
+		return
+	fi
+}
+
+### Stop Server
+function stopJbossServer()
+{
+	/${scripts_home}/stop${jboss_instance_name}.sh
+    rm -rf ${local_home}/standalone/tmp
+    rm -rf ${local_home}/standalone/deployments/*
+	rm -rf /tmp/ready
+	echoLog "INFO" "${jboss_instance_name} - $(hostname) - Stopped" "JVM Operation" "True" | tee -a $Application_Logs/jvmOperations.log > /dev/null
+	echoLog "INFO" "${jboss_instance_name} - $(hostname) - Stopped" "EDM Application" "True" | tee -a /$logs_home/logs/EdmApplications/EdmApplications.log > /dev/null
+}
+
+### Start Server
+function startJbossServer()
+{
+	## Update edm-applications.json
+	if [ "$jboss_instance_name" == "Workstation" ] && [ -f /$configurations_home/edm-applications.json ]; then
+		envsubst < /$configurations_home/edm-applications.json > /tmp/edm-applications.json
+	fi
+	if [ "$jboss_instance_name" == "Flowstudio" ] && [ -f /$configurations_home/Flowstudio.json ]; then
+		envsubst < /$configurations_home/Flowstudio.json > /tmp/Flowstudio.json
+	fi
+	echoLog "INFO" "${jboss_instance_name} - $(hostname) - Starting" "JVM Operation" "True" | tee -a $Application_Logs/jvmOperations.log > /dev/null
+	rm -rf ${local_home}/standalone/tmp
+	rm -rf ${local_home}/standalone/deployments/*
+	rm -rf /tmp/ready
+	touch /tmp/startup
+	touch /tmp/liveness
+	/${scripts_home}/start${jboss_instance_name}.sh
+	touch /tmp/ready
+	echoLog "INFO" "${jboss_instance_name} - $(hostname) - Started" "JVM Operation" "True" | tee -a $Application_Logs/jvmOperations.log > /dev/null
+	echoLog "INFO" "${jboss_instance_name} - $(hostname) - Image - Repository - ${application_image}" "EDM Application" "True" | tee -a /$logs_home/logs/EdmApplications/EdmApplications.log > /dev/null
+	echoLog "INFO" "${jboss_instance_name} - $(hostname) - Started" "EDM Application" "True" | tee -a /$logs_home/logs/EdmApplications/EdmApplications.log > /dev/null
+	jbossRunningOption="Mount"
+}
+
+### Start Local Server
+function startLocalServer()
+{
+	rm -rf /tmp/ready
+	touch /tmp/startup
+	touch /tmp/liveness
+	echoLog "INFO" "${jboss_instance_name} - $(hostname) - Waiting" "JVM Operation" "True" | tee -a $Application_Logs/jvmOperations.log > /dev/null
+	jbossRunningOption="Local"
+}
+
+### Start Local Server
+function logEdmApplicationPodDetails()
+{
+	podDetails=`getEdmApplicationPodDetails`
+	printf "%-15s ${msg1Seperator} %-30s ${msg2Seperator} %-16s ${msg3Seperator} %-4s ${msg4Seperator}\n" "Application" "Pod Name" "Pod IP" "Pod Port" | tee /$logs_home/logs/EdmApplications/EdmApplicationsPodDetails.log > /dev/null
+	printf "%-15s ${msg1Seperator} %-30s ${msg2Seperator} %-16s ${msg3Seperator} %-4s ${msg4Seperator}\n" "-----------" "--------" "------" "--------" | tee -a /$logs_home/logs/EdmApplications/EdmApplicationsPodDetails.log > /dev/null
+	for podDetail in $podDetails; 
+	do 
+		clusterApplication=$(echo "$podDetail" | cut -d "," -f 1)
+		clusterPodName=$(echo "$podDetail" | cut -d "," -f 2)
+		clusterPodIP=$(echo "$podDetail" | cut -d "," -f 3)
+		clusterPodPort=$(echo "$podDetail" | cut -d "," -f 4)
+		printf "%-15s ${msg1Seperator} %-30s ${msg2Seperator} %-16s ${msg3Seperator} %-4s ${msg4Seperator}\n" "${clusterApplication}" "${clusterPodName}" "${clusterPodIP}" "${clusterPodPort}" | tee -a /$logs_home/logs/EdmApplications/EdmApplicationsPodDetails.log > /dev/null
+    done
+}

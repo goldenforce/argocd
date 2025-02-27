@@ -1,0 +1,80 @@
+function spinner() 
+{
+	spinnerStatus="Failed"
+	on_success="DONE"
+	on_fail="FAILED"
+	on_sla_breach="SLA BREACHED"
+	on_wkf_exec_issue="EXECUTION ISSUE"
+	on_has_error="HAS ERROR"
+
+	case $1 in
+	start)
+		#let column=$(tput cols)-${#2}-8
+		column=38
+
+		echo -ne ${2}
+		printf "%${column}s"
+
+		i=1
+		sp='\|/-'
+		delay=${SPINNER_DELAY:-0.15}
+
+		while :; do
+			#printf "\b${sp:i++%${#sp}:1}"
+			sleep $delay
+		done
+		;;
+	stop)
+		if [[ -z ${3} ]]; then
+			echo "spinner is not running.."
+			return
+		fi
+
+		kill $3 >/dev/null 2>&1
+
+		echo -en "\b["
+		if [[ $2 -eq 1 ]]; then
+			echo -en "${on_fail}"
+			echo -e "]"
+			retval=1
+		elif [[ $2 -eq 0 ]]; then
+			echo -en "${on_success}"
+			echo -e "]"
+			retval=0
+		elif [[ $2 -eq 2 ]]; then
+			echo -en "${on_sla_breach}"
+			echo -e "]"
+			retval=2
+		elif [[ $2 -eq 4 ]]; then
+			echo -en "${on_has_error}"
+			echo -e "]"
+			retval=4
+		else
+			echo -en "${on_wkf_exec_issue}"
+			echo -e "]"
+			retval=3
+		fi
+		return "$retval"
+		;;
+	*)
+		echo "invalid argument, try {start/stop}"
+		return
+		;;
+	esac
+	spinnerStatus="Completed"
+}
+
+function startSpinner() 
+{
+	spinner "start" "${1}" &
+	_sp_pid=$!
+	disown
+}
+
+function stopSpinner() 
+{
+	spinner "stop" $1 $_sp_pid
+	retval=$?
+	unset _sp_pid
+	return "$retval"
+}

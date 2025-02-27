@@ -1,0 +1,307 @@
+### Basic, Annotations
+{{- $basic := include "basic" . | fromYaml }}
+{{- $annotationsLabels := include "annotationsLabels" . | fromYaml }}
+{{- $annotationsLabelsService := include "annotationsLabelsService" . | fromYaml }}
+### Applications
+{{- $applications := include "applications" . | fromYaml }}
+### Init container
+{{- $initContainer := include "initContainer" . | fromYaml }}
+### Volume Mounts
+{{- $volumeMounts := include "volumeMounts" . | fromYaml }}
+### Volumes
+{{- $volumes := include "volumes" . | fromYaml }}
+### Checksum
+{{- $checkSum := include "checkSum" . | fromYaml }}
+### Custom
+{{- $custom := include "custom" . | fromYaml }}
+###
+{{- if $basic.basic.processApplications }}
+###
+{{- range $k, $v := $applications.applications -}}
+{{- if eq "EDMA" $k }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ lower $k }}
+  annotations:
+    {{- with $annotationsLabelsService.service.annotations }}
+    {{ toYaml . | nindent 4 }}
+    {{- end }}
+
+    ### Openshift
+    {{- if eq $.Values.common.cloud "openshift" }}
+    {{- if eq $.Values.ingresses.ingress.ui.ingressClassName "openshift-default" }}
+    service.beta.openshift.io/serving-cert-secret-name: {{ printf "edm-openshift-%s" (lower $k) }}
+    {{- end }}
+    {{- end }}
+  labels:
+    cluster: {{ lower $k }}
+    app: {{ lower $k }}
+    {{- with $annotationsLabels.common.labels }}
+    {{ toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  ports:
+  - name: https
+    port: {{ $v.port }}
+    protocol: TCP
+    targetPort: {{ $v.port }}
+  selector:
+    cluster: {{ lower $k }}
+  sessionAffinity: ClientIP
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ lower $k }}
+  annotations:
+    {{- with $annotationsLabels.common.annotations }}
+    {{ toYaml . | nindent 4 }}
+    {{- end }}
+    checksum/edm-applications-checkSum: {{ $checkSum  | toJson | sha256sum }}
+  labels:
+    cluster: {{ lower $k }}
+    app: {{ lower $k }}
+    {{- with $annotationsLabels.common.labels }}
+    {{ toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  replicas: {{ $v.replicas }}
+  selector:
+    matchLabels:
+      cluster: {{ lower $k }}
+      app: {{ lower $k }}
+      {{- with $annotationsLabels.common.labels }}
+      {{ toYaml . | nindent 6 }}
+      {{- end }}
+  template:
+    metadata:
+      annotations:
+        {{- with $annotationsLabels.common.annotations }}
+        {{ toYaml . | nindent 8 }}
+        {{- end }}
+        checksum/edm-applications-checkSum: {{ $checkSum  | toJson | sha256sum }}
+      labels:
+        cluster: {{ lower $k }}
+        app: {{ lower $k }}
+        jolokia: {{ $basic.basic.edm_jolokia | quote }}
+        edm_applications: "true"
+        {{- with $annotationsLabels.common.labels }}
+        {{ toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      securityContext:
+        runAsUser: {{ $v.securityContext.runAsUser }}
+        runAsGroup: {{ $v.securityContext.runAsGroup }}
+        fsGroup: {{ $v.securityContext.fsGroup }}
+        fsGroupChangePolicy: {{ $v.securityContext.fsGroupChangePolicy }}
+      automountServiceAccountToken: true
+      serviceAccountName: {{ $basic.basic.cluster.serviceAccountName }}
+      terminationGracePeriodSeconds: 120
+      ### Image Pull Secret
+      {{- if $basic.basic.imagePullSecretsEnabled }}
+      imagePullSecrets:
+        - name: {{ $basic.basic.imagePullSecretsName }}
+      {{- end }}
+      ### Node Affinity
+      {{- with $basic.basic.cluster.node }}
+      {{ toYaml . | nindent 6 }}
+      {{- end }}
+      ### Init container
+      {{- with $initContainer }}
+      {{- with index . $k }}
+      {{ toYaml . | nindent 6 }}
+      {{- end }}
+      {{- end }}
+      ### Init container - Custom
+      {{- if $basic.basic.customHelm }}
+      {{- with $custom.custom.initContainers }}
+      {{ toYaml . | nindent 6 }}
+      {{- end }}
+      {{- end }}
+      containers:
+      - name: {{ lower $k }}
+        image: {{ $v.image }}
+        imagePullPolicy: {{ $basic.basic.imagePullPolicy }}
+        env:
+        - name: KUBERNETES_LABELS
+          value: "cluster={{ lower $k }}"
+        - name: functional_class
+          value: "{{ lower $k }}"
+        - name: functional_type
+          value: "{{ $v.type }}"
+        - name: jboss_instance_name
+          value: "Automation"
+        - name: port_offset
+          value: "{{ $v.portOffset }}"
+        - name: port
+          value: "{{ $v.port }}"
+        - name: local_home
+          value: "{{ $v.local_home}}"
+        - name: default_context_path
+          value: {{ $v.contextPathDefault }}
+        - name: curlSleepTime
+          value: "{{ $v.curlSleepTime }}"
+        - name: application_image
+          value: {{ $v.image | quote  }}
+        {{- if $basic.basic.customHelm }}
+        {{- with $custom.custom.env }}
+        {{ toYaml . | nindent 8 }}
+        {{- end }}
+        {{- end }}
+        envFrom:
+        - configMapRef:
+            name: edm-applications-config-map
+            optional: false
+        command: ["/bin/sh", "-c"]
+        args: 
+        - |
+          ### Load Scripts
+          . /etc/edm/functions/edm_functions.sh
+          
+          ### Main Process
+          ### Create TNSNames ora
+          if [ "$DatabaseType" == "oracle" ]; then
+             createTNSNamesOra
+          fi
+          ### Create ODBC ini
+          if [ "$DatabaseType" == "postgresql" ]; then
+             createODBCIni
+          fi
+
+          ##### Copy local tar and scripts file
+          cd /ext/app
+          ## Copy local tar
+          find '/home/app' -name '*.tar' -exec tar -xf {} \;
+          ## Copy EDM Scripts
+          cd /ext/app
+          cp -r /etc/edm/scripts/edm/* .
+          ## Copy from mount - if present
+          if [ -d "/${logs_home}/software" ]; then
+             mkdir -p software
+             cp -R /${logs_home}/software/ApplicationConfigurations ./software/ApplicationConfigurations 2>/dev/null
+             cp -R /${logs_home}/software/Deployment ./software/Deployment 2>/dev/null
+             cp -R /${logs_home}/software/ServerScripts ./software/ServerScripts 2>/dev/null
+          fi
+           
+          ## Initialize
+          ## Initialize - Home
+          Application_Logs=/${logs_home}/logs/EdmApplications/${jboss_instance_name}/$(hostname)
+          mkdir -p $Application_Logs
+          
+          ## Initialize - Jboss
+          jbossRunningOption="Local"
+          sleepProcessTime=60
+          infiniteRunningCount=0
+          jbossStartOption="Local"
+          edmaProperties="false"
+
+          while true;
+          do
+             if [ "$jbossStartOption" == "Crash" ]; then
+                sleep $sleepProcessTime
+                continue
+             fi
+             if [ -f "$start_edm" ]; then
+                export $( cat ${start_edm} | xargs )
+                if [ "$edmaProperties" == "false" ]; then
+                   ## Replace EDMA properties
+                   setEDMAProperties
+                   ## Replace GroupName
+                   sed -i "s/GroupName=.*/GroupName=EDMA_Application_PG/" $edmaProperties
+                   edmaProperties="true"
+                fi
+             else
+                unset installed_edm_version
+             fi
+             checkJbossStartOption
+             if [ "$jbossStartOption" == "Local" ]; then
+                if [ "$jbossRunningOption" == "Mount" ]; then
+                   stopJbossServer
+                fi
+                startLocalServer
+             fi
+             if [ "$jbossStartOption" == "Mount" ]; then
+                if [ "$jbossRunningOption" == "Mount" ]; then
+                   stopJbossServer
+                fi
+                startJbossServer
+             fi
+             sleep $sleepProcessTime
+             ((infiniteRunningCount += 1))
+          done
+        ports:
+        - containerPort: {{ $v.port }}
+          name: https
+          protocol: TCP
+        resources:
+          limits:
+            cpu: {{ $v.resources.limits.cpu }}
+            memory: {{ $v.resources.limits.memory }}
+          requests:
+            cpu: {{ $v.resources.requests.cpu }}
+            memory: {{ $v.resources.requests.memory }}
+        startupProbe:
+          failureThreshold: {{ $v.probes.startupProbe.failureThreshold }}
+          periodSeconds: {{ $v.probes.startupProbe.periodSeconds }}
+          successThreshold: 1
+          timeoutSeconds: 20
+          exec:
+            command: ["cat", "/tmp/startup"]
+        readinessProbe:
+          failureThreshold: {{ $v.probes.livenessProbe.failureThreshold }}
+          periodSeconds: {{ $v.probes.livenessProbe.periodSeconds }}
+          successThreshold: 1
+          timeoutSeconds: 1
+          exec:
+            command: ["cat", "/tmp/ready"]
+        livenessProbe:
+          failureThreshold: {{ $v.probes.livenessProbe.failureThreshold }}
+          periodSeconds: {{ $v.probes.livenessProbe.periodSeconds }}
+          successThreshold: 1
+          timeoutSeconds: 1
+          exec:
+            command: ["cat", "/tmp/liveness"]
+        lifecycle:
+          postStart:
+            exec:
+              command:
+              - /bin/sh
+              - -c
+              - mkdir -p /${logs_home}/logs/EdmApplications
+          preStop:
+            exec:
+              command:
+              - /bin/sh
+              - -c
+              - . /etc/edm/functions/edm_functions.sh; Application_Logs=/${logs_home}/logs/EdmApplications/${jboss_instance_name}/$(hostname); stopJbossServer; echoLog "ERROR" "${jboss_instance_name} - $(hostname) - Terminated" "JVM Operation" "True" | tee -a /${logs_home}/logs/EdmApplications/${jboss_instance_name}/$(hostname)/jvmOperations.log; echoLog "INFO"  "${jboss_instance_name} - $(hostname) - Terminated" "EDM Application" "True" | tee -a /$logs_home/logs/EdmApplications/EdmApplications.log; sleep 60  
+        ### Volume Mounts
+        {{- with $volumeMounts }}
+        {{- with index . $k }}
+        {{ toYaml . | nindent 8 }}
+        {{- end }}
+        {{- end }}
+        ### Volume Mounts - Custom
+        {{- if $basic.basic.customHelm }}
+        {{- with $custom.custom.volumeMounts }}
+        {{ toYaml . | nindent 8 }}
+        {{- end }}
+        {{- end }}
+      ### Volumes
+      {{- with $volumes }}
+      {{- with index . $k }}
+      {{ toYaml . | nindent 6 }}
+      {{- end }}
+      {{- end }}
+      ### Volumes - Custom
+      {{- if $basic.basic.customHelm }}
+      {{- with $custom.custom.volumes }}
+      {{ toYaml . | nindent 6 }}
+      {{- end }}
+      {{- end }}
+---
+{{- end }}
+{{- end }}
+{{- end }}
+

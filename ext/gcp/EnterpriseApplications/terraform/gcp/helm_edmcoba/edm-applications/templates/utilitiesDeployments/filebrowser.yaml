@@ -1,0 +1,281 @@
+### Basic, Annotations
+{{- $basic := include "basic" . | fromYaml }}
+{{- $annotationsLabels := include "annotationsLabels" . | fromYaml }}
+{{- $annotationsLabelsService := include "annotationsLabelsService" . | fromYaml }}
+### Applications
+{{- $applications := include "applications" . | fromYaml }}
+### Ingresses
+{{- $ingresses := include "ingresses" . | fromYaml }}
+### Init container
+{{- $initContainer := include "initContainer" . | fromYaml }}
+### Volume Mounts
+{{- $volumeMounts := include "volumeMounts" . | fromYaml }}
+### Volumes
+{{- $volumes := include "volumes" . | fromYaml }}
+### Checksum
+{{- $checkSum := include "checkSum" . | fromYaml }}
+### Custom
+{{- $custom := include "custom" . | fromYaml }}
+###
+{{- if $basic.basic.processApplications }}
+###
+{{- range $k, $v := $applications.applications -}}
+{{- if eq "Filebrowser" $k }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ lower $k }}
+  annotations:
+    {{- with $annotationsLabelsService.service.annotations }}
+    {{ toYaml . | nindent 4 }}
+    {{- end }}
+
+    ### Openshift
+    {{- if eq $.Values.common.cloud "openshift" }}
+    {{- if eq $.Values.ingresses.ingress.ui.ingressClassName "openshift-default" }}
+    service.beta.openshift.io/serving-cert-secret-name: {{ printf "edm-openshift-%s" (lower $k) }}
+    {{- end }}
+    {{- end }}
+  labels:
+    cluster: {{ lower $k }}
+    app: {{ lower $k }}
+    {{- with $annotationsLabels.common.labels }}
+    {{ toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  ports:
+  - name: http
+    port: 4180
+    protocol: TCP
+    targetPort: 4180
+  selector:
+    cluster: {{ lower $k }}
+  sessionAffinity: ClientIP
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ lower $k }}
+  annotations:
+    {{- with $annotationsLabels.common.annotations }}
+    {{ toYaml . | nindent 4 }}
+    {{- end }}
+    checksum/edm-applications-checkSum: {{ $checkSum  | toJson | sha256sum }}
+  labels:
+    cluster: {{ lower $k }}
+    app: {{ lower $k }}
+    {{- with $annotationsLabels.common.labels }}
+    {{ toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  serviceName: {{ lower $k }}
+  replicas: 1
+  selector:
+    matchLabels:
+      cluster: {{ lower $k }}
+      app: {{ lower $k }}
+      {{- with $annotationsLabels.common.labels }}
+      {{ toYaml . | nindent 6 }}
+      {{- end }}
+  template:
+    metadata:
+      name: {{ lower $k }}
+      annotations:
+        {{- with $annotationsLabels.common.annotations }}
+        {{ toYaml . | nindent 8 }}
+        {{- end }}
+        checksum/edm-applications-checkSum: {{ $checkSum  | toJson | sha256sum }}
+      labels:
+        cluster: {{ lower $k }}
+        app: {{ lower $k }}
+        {{- with $annotationsLabels.common.labels }}
+        {{ toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      securityContext:
+        runAsUser: {{ $v.securityContext.runAsUser }}
+        runAsGroup: {{ $v.securityContext.runAsGroup }}
+        fsGroup: {{ $v.securityContext.fsGroup }}
+        fsGroupChangePolicy: {{ $v.securityContext.fsGroupChangePolicy }}
+      automountServiceAccountToken: true
+      serviceAccountName: {{ $basic.basic.cluster.serviceAccountName }}
+      terminationGracePeriodSeconds: 0
+      ### Image Pull Secret
+      {{- if $basic.basic.imagePullSecretsEnabled }}
+      imagePullSecrets:
+        - name: {{ $basic.basic.imagePullSecretsName }}
+      {{- end }}
+      ### Node Affinity
+      {{- with $basic.basic.cluster.node }}
+      {{ toYaml . | nindent 6 }}
+      {{- end }}
+      ### Init container
+      {{- with $initContainer }}
+      {{- with index . $k }}
+      {{ toYaml . | nindent 6 }}
+      {{- end }}
+      {{- end }}
+      ### Init container - Custom
+      {{- if $basic.basic.customHelm }}
+      {{- with $custom.custom.initContainers }}
+      {{ toYaml . | nindent 6 }}
+      {{- end }}
+      {{- end }}
+      containers:
+      - name: {{ lower $k }}
+        image: {{ $applications.applications.Filebrowser.image }}
+        imagePullPolicy: {{ $basic.basic.imagePullPolicy }}
+        envFrom:
+        - configMapRef:
+            name: edm-applications-config-map
+            optional: false
+        env:
+        - name: DATA_DIR
+          value: {{ $basic.basic.persistentVolume.path }}
+        - name: application_image
+          value: {{ $applications.applications.Filebrowser.image | quote }}
+        command: ["/bin/sh", "-c"]      
+        args:
+        - |
+          ### Load Scripts
+          . /etc/edm/functions/edm_functions.sh
+        
+          ## Main
+          /ext/app/filebrowser/bin/filebrowser -c /ext/app/filebrowser/config/filebrowser.json config init > /dev/null
+          /ext/app/filebrowser/bin/filebrowser -c /ext/app/filebrowser/config/filebrowser.json config set --database "/ext/app/filebrowser/db/filebrowser.db" > /dev/null
+          /ext/app/filebrowser/bin/filebrowser -c /ext/app/filebrowser/config/filebrowser.json config set --baseurl "/filebrowser" > /dev/null
+          /ext/app/filebrowser/bin/filebrowser -c /ext/app/filebrowser/config/filebrowser.json config set --root "/data" > /dev/null
+          /ext/app/filebrowser/bin/filebrowser -c /ext/app/filebrowser/config/filebrowser.json config set --branding.files "/ext/app/filebrowser/branding" --branding.name "GoldenSource - Filebrowser" --branding.disableExternal > /dev/null
+          /ext/app/filebrowser/bin/filebrowser -c /ext/app/filebrowser/config/filebrowser.json users add dummyuser dummyuser > /dev/null
+          /ext/app/filebrowser/bin/filebrowser -c /ext/app/filebrowser/config/filebrowser.json config set --auth.method=noauth > /dev/null
+
+          ## Logs
+          serverLog="/data/logs/UtilityApplications/Filebrowser/Filebrowser.log"
+          mkdir -p "$(dirname "$serverLog")"
+          shortDate=$(date +"%Y%m%d%H%M")
+          if test -f "$serverLog"; then
+             mv $serverLog $serverLog.$shortDate
+          fi		 
+
+          ## Start
+          echoLog "INFO" "Filebrowser - $(hostname) - Image - Repository - ${application_image}" "Utility Application" "True" | tee -a /data/logs/UtilityApplications/UtilityApplications.log
+          
+          ## Run infinite
+          processStarted="False"
+          while true;
+          do
+             if [ -f "/data/logs/Initialize/servers/restartFilebrowser" ]; then
+                pids=$(pgrep -f "filebro" | grep -v '^1$')
+                for pid in $pids; do kill -9 $pid; done
+                rm -rf /data/logs/Initialize/servers/restartFilebrowser
+                echoLog "INFO" "Filebrowser - $(hostname) - Stopped" "Utility Application" "True" | tee -a /data/logs/UtilityApplications/UtilityApplications.log
+                processStarted="False"
+                sleep 20
+             fi
+             if [ "$processStarted" == "False" ]; then
+                /ext/app/filebrowser/bin/filebrowser -c /ext/app/filebrowser/config/filebrowser.json -d /ext/app/filebrowser/db/filebrowser.db > $serverLog 2>&1 &
+                processStarted="True"
+                echoLog "INFO" "Filebrowser - $(hostname) - Started" "Utility Application" "True" | tee -a /data/logs/UtilityApplications/UtilityApplications.log
+             fi
+             sleep 20
+          done
+        ports:
+        - containerPort: 8080
+          name: http
+          protocol: TCP
+        resources:
+          limits:
+            cpu: {{ $v.resources.limits.cpu }}
+            memory: {{ $v.resources.limits.memory }}
+          requests:
+            cpu: {{ $v.resources.requests.cpu }}
+            memory: {{ $v.resources.requests.memory }}
+        volumeMounts:
+        - mountPath: data
+          name: edm-disk-share
+        - name: edm-applications-secret
+          mountPath: /etc/edm
+      - name: {{ lower $k }}-keycloak-gatekeeper
+        image: {{ $applications.applications.Filebrowser.imageGatekeeper }}
+        imagePullPolicy: {{ $basic.basic.imagePullPolicy }}
+        command: ["/bin/sh", "-c"]      
+        env:
+        {{- if $basic.basic.customHelm }}
+        {{- with $custom.custom.env }}
+        {{ toYaml . | nindent 8 }}
+        {{- end }}
+        {{- end }}
+        envFrom:
+        - configMapRef:
+            name: edm-applications-config-map
+            optional: false
+        args:
+        - |
+          ### Load Scripts
+          . /etc/edm/functions/edm_functions.sh
+          
+          ### Multiple Roles formatted
+          multipleRoles={{ $v.roles | quote }}
+          roles=$(echo "$multipleRoles" | sed 's/\([^,]*\)/"\1"/g' | tr -d '\n') 
+
+          ### Configuration file
+          cat <<EOF > /ext/app/keycloak_gatekeeper/oauth2-proxy.conf
+            provider="keycloak-oidc"
+            client_id="{{ $k }}"
+            client_secret="${Keycloak_client_secret}"
+            proxy_prefix="/{{ lower $k }}/oauth2"
+            upstreams=["http://127.0.0.1:8080"]
+            oidc_issuer_url="https://{{ $ingresses.ingresses.ui.host }}/auth/realms/{{ $basic.basic.realm }}"
+            profile_url="https://{{ $ingresses.ingresses.ui.host }}/auth/realms/{{ $basic.basic.realm }}/protocol/openid-connect/userinfo"
+            allowed_roles=[${roles}]
+            https_address="0.0.0.0:4180"
+            cookie_secret="${Keycloak_cookie_secret}"
+            cookie_expire=0
+            email_domains=["*"]
+            insecure_oidc_allow_unverified_email="true"
+            skip_provider_button="true"
+            custom_templates_dir="/ext/app/keycloak_gatekeeper"
+            ssl_insecure_skip_verify="true"
+            skip_oidc_discovery="true"
+            login_url="https://{{ $ingresses.ingresses.ui.host }}/auth/realms/{{ $basic.basic.realm }}/protocol/openid-connect/auth"
+            redeem_url="https://{{ $ingresses.ingresses.ui.host }}/auth/realms/{{ $basic.basic.realm }}/protocol/openid-connect/token"
+            oidc_jwks_url="https://{{ $ingresses.ingresses.ui.host }}/auth/realms/{{ $basic.basic.realm }}/protocol/openid-connect/certs"
+            tls_cert_file="/ext/app/protected/Certificates/ui/certificate.crt"
+            tls_key_file="/ext/app/protected/Certificates/ui/private.key"
+            ssl_upstream_insecure_skip_verify="true"
+          EOF
+          ### Start Oauth proxy
+          cd /ext/app/keycloak_gatekeeper
+          ./oauth2-proxy --config /ext/app/keycloak_gatekeeper/oauth2-proxy.conf
+        ports:
+        - containerPort: 4180
+          name: http
+          protocol: TCP
+        ### Volume Mounts
+        {{- with $volumeMounts }}
+        {{- with index . $k }}
+        {{ toYaml . | nindent 8 }}
+        {{- end }}
+        {{- end }}
+        ### Volume Mounts - Custom
+        {{- if $basic.basic.customHelm }}
+        {{- with $custom.custom.volumeMounts }}
+        {{ toYaml . | nindent 8 }}
+        {{- end }}
+        {{- end }}
+      ### Volumes
+      {{- with $volumes }}
+      {{- with index . $k }}
+      {{ toYaml . | nindent 6 }}
+      {{- end }}
+      {{- end }}
+      ### Volumes - Custom
+      {{- if $basic.basic.customHelm }}
+      {{- with $custom.custom.volumes }}
+      {{ toYaml . | nindent 6 }}
+      {{- end }}
+      {{- end }}
+{{- end }}
+{{- end }}
+{{- end }}

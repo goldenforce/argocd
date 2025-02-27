@@ -1,0 +1,52 @@
+### Update Environment using Installation Studio
+function instStudioCLIEnvPropertyUpdate()
+{
+	### Work folder
+	mainLogFile="$1"
+	instStudioCLIEnvPropertyUpdateWorkFolder="$2"
+	instStudioCLIEnvPropertyUpdateLogFile="${instStudioCLIEnvPropertyUpdateWorkFolder}/instStudioCLIEnvPropertyUpdate.log"
+	instStudioCLIEnvPropertyUpdateStatus="Failed"
+
+	### Update Installation Studio variables
+	if [ "$DatabaseType" == "oracle" ]; then
+		installationProfileTemplate="${configurations_folder}/installationStudioCLI/InstallationProfile_oracle_Template.xml"
+	fi
+	if [ "$DatabaseType" == "postgresql" ]; then
+		installationProfileTemplate="${configurations_folder}/installationStudioCLI/InstallationProfile_postgresql_Template.xml"
+	fi
+	
+	installationProfile="${installationProfilePath}/workspace/profiles/InstallationProfile.xml"
+    updateEnvProp="${installationProfilePath}/commandLines/linux/update-env-prop.sh"
+
+	### Update Installation Studio Profile XML
+	cp $installationProfileTemplate $installationProfile
+	envsubst < $installationProfile > /tmp/profile.xml
+	sed -i s/"&amp;"/"#abcd0123#"/g /tmp/profile.xml
+	sed -i s/"&"/"&amp;"/g  /tmp/profile.xml
+	sed -i s/"#abcd0123#"/"&amp;"/g  /tmp/profile.xml
+	cp  /tmp/profile.xml $installationProfile 
+    tr -d '\r' <$updateEnvProp > t
+    mv t $updateEnvProp;
+
+	### Execute Installation Studio CLI
+	cd ${installationProfilePath}
+	now=`date -u '+%Y%m%d_%H%M'`
+	instStudioCLIEnvPropertyUpdateStartTime=$(date +%s)
+    jarName=`ls Installation_Studio*.jar`
+	java -Xms256m -Xmx1024m -Ddb.type=${database_connection_is} -cp ${jarName}:externals/* main.service.commandline.EnvironmentPropertyUpdaterCommandLine InstallationProfile.xml > ${instStudioCLIEnvPropertyUpdateLogFile}
+	computeElapsedTime ${instStudioCLIEnvPropertyUpdateStartTime}
+	instStudioCLIEnvPropertyUpdateError=`grep -i "ERROR" "${instStudioCLIEnvPropertyUpdateLogFile}" | wc -l`
+		
+	### Final
+	if [[ -s ${instStudioCLIEnvPropertyUpdateLogFile} ]] ; then
+		if [[ ${instStudioCLIEnvPropertyUpdateError} -gt 0 ]]; then
+			executeCommandErrorFileRename=`echo "${instStudioCLIEnvPropertyUpdateLogFile/.log/.err}"`
+			mv "${executeCommandErrorFile}" "${executeCommandErrorFileRename}" 2>/dev/null
+		else
+			instStudioCLIEnvPropertyUpdateStatus="Completed"
+			echoLog "INFO" "Env Sync - EDM - Completed - ${elapsedTimeTaken}" "Check Database" | tee -a $mainLogFile
+		fi
+	else
+		echoLog "ERROR" "Env Sync - EDM - Failed - ${elapsedTimeTaken}" "Check Database" | tee -a $mainLogFile
+	fi
+}

@@ -1,0 +1,239 @@
+### Configure Edma
+function configureEdma()
+{
+	## Initialize
+	configureEdmaStatus="Failed"
+	configurePlatformStateSetTaskStatus="Failed"
+
+	now=`date -u '+%Y%m%d_%H%M'`
+	configureEdmaStartTime=$(date +%s)
+	echoLog "INFO" "Job - $(hostname) - Image - Repository - ${application_image}" "Configure Edma" "True" | tee -a ${configureEdmaLogFile}
+	echoLog "INFO" "All - Configurations - Begin" "Configure Edma" | tee -a ${configureEdmaLogFile}
+
+	## Check for startEDM
+	if [ ! -f "${start_edm}" ]; then
+		echoLog "ERROR" "startEDM - Access - Failed" "Configure Edma" | tee -a ${configureEdmaLogFile}
+		configureEdmaPlatformStateSetTask
+		return
+	fi
+	echoLog "INFO" "startEDM - Access - Completed" "Configure Edma" | tee -a ${configureEdmaLogFile}
+
+	## Check Keycloak running
+    keycloakRunning=$(checkIfKeycloakAccessible)
+    if [ "$keycloakRunning" == "False" ]; then
+		echoLog "ERROR" "Keycloak - Access - Failed" "Configure Edma" | tee -a ${configureEdmaLogFile}
+		configureEdmaPlatformStateSetTask 
+		return
+    fi
+	echoLog "INFO" "Keycloak - Access - Completed" "Configure Edma" | tee -a ${configureEdmaLogFile}
+
+	## Replace properties
+	setEDMAProperties
+	echoLog "INFO" "EDMA - Properties - Completed" "Configure Edma" | tee -a ${configureEdmaLogFile}
+
+	################################################### Pre-requisite check  Begin
+	cd /ext/app/Edma
+	## Replace GroupName
+	sed -i "s/GroupName=.*/GroupName=AutoDataSetup/" $edmaProperties
+
+	## Run EDMA (First pass)
+	echoLog "INFO" "EDMA - First Pass - Started" "Configure Edma" | tee -a ${configureEdmaLogFile}
+	./automation.sh path=/ext/app/Edma/EDMA.properties /ext/app/Repository
+
+	## Check Status (First pass)
+	cd /ext/app
+	Failed=999
+	edmaStatusLog=`find . -name Edma_Status.log -print -quit`
+	if [ -f "$edmaStatusLog" ]; then
+		export $( cat ${edmaStatusLog} | xargs )
+	fi
+
+	## Copy Logs (First pass)
+	cd /ext/app
+	cp -r ./Repository/TestEvidence/* ${configureEdmaWorkFolder}/work
+	rm -rf ./Repository/TestEvidence/*
+
+	## Update status (First pass)
+	if [ ! $Failed -eq 0 ]; then
+		echoLog "ERROR" "First - Pass - Failed" "Configure Edma" | tee -a ${configureEdmaLogFile}
+		configureEdmaPlatformStateSetTask 
+		return
+	fi
+	echoLog "INFO" "EDMA - First Pass - Completed" "Configure Edma" | tee -a ${configureEdmaLogFile}
+  
+	## Restart EDM applications
+	restartEDM 
+	sleep 120
+	echoLog "INFO" "Restart - EDM - Completed" "Configure Edma" | tee -a ${configureEdmaLogFile}    
+    ################################################### Pre-requisite check End
+  
+	## Replace GroupName
+	sed -i "s/GroupName=.*/GroupName=EDMA_Application_PG/" $edmaProperties
+
+	## Check Selenium running
+	seleniumRunning=$(checkIfSeleniumAccessible)
+    if [ "$seleniumRunning" == "False" ]; then
+		echoLog "ERROR" "Selenium - Access - Failed" "Configure Edma" | tee -a ${configureEdmaLogFile}
+		configureEdmaPlatformStateSetTask 
+		return
+	fi
+	echoLog "INFO" "Selenium - Access - Completed" "Configure Edma" | tee -a ${configureEdmaLogFile}
+
+
+	## Check Workstation running
+	workstationRunning=$(checkIfWorkstationAccessible)
+    if [ "$workstationRunning" == "False" ]; then
+		echoLog "ERROR" "Workstation - Access - Failed" "Configure Edma" | tee -a ${configureEdmaLogFile}
+		configureEdmaPlatformStateSetTask 
+		return
+	fi
+	echoLog "INFO" "Workstation - Access - Completed" "Configure Edma" | tee -a ${configureEdmaLogFile}
+
+	## Check Orchestrator running
+	orchestratorRunning=$(checkIfOrchestratorAccessible)
+    if [ "$orchestratorRunning" == "False" ]; then
+		echoLog "ERROR" "Orchestrator - Access - Failed" "Configure Edma" | tee -a ${configureEdmaLogFile}
+		configureEdmaPlatformStateSetTask 
+		return
+	fi
+	echoLog "INFO" "Orchestrator - Access - Completed" "Configure Edma" | tee -a ${configureEdmaLogFile}
+
+	## Run EDMA (Second pass)
+	cd /ext/app/Edma
+	./automation.sh path=/ext/app/Edma/EDMA.properties /ext/app/Repository
+
+	## Check Status (Second pass)
+	cd /ext/app
+	Failed=999
+	edmaStatusLog=`find . -name Edma_Status.log -print -quit`
+	if [ -f "$edmaStatusLog" ]; then
+		export $( cat ${edmaStatusLog} | xargs )
+	fi
+
+    ## Copy Logs (Second pass)
+	cd /ext/app
+	cp -r ./Repository/TestEvidence/* ${configureEdmaWorkFolder}/work
+	rm -rf ./Repository/TestEvidence/*
+
+	## Final
+	computeElapsedTime ${configureEdmaStartTime}
+	## Update status (Second pass)
+	if [ ! $Failed -eq 0 ]; then
+		echoLog "ERROR" "Second - Pass - Failed - ${elapsedTimeTaken}" "Configure Edma" | tee -a ${configureEdmaLogFile}
+		configureEdmaPlatformStateSetTask 
+		return
+	fi
+	echoLog "INFO" "Second - Pass - Completed - ${elapsedTimeTaken}" "Configure Edma" | tee -a ${configureEdmaLogFile}
+	configureEdmaStatus="Completed"
+	configureEdmaPlatformStateSetTask
+}
+### Platform status
+function configureEdmaPlatformStateSetTask()
+{
+	### Process Platform State
+	configurePlatformStateSetTask "configureEdma" "${edm_version}" "${configureEdmaStatus}"
+}
+
+### Replace EDMA Properties
+function setEDMAProperties()
+{
+	## Check if 'local' is enabled
+	if [ "$artefacts_home" == "local" ]; then
+		find '/home/app' -name '*.tar' -exec tar -xf {} \;
+		## Copy EDM Scripts
+		cd /ext/app
+		cp -r /etc/edm/scripts/edm/* .
+	fi
+
+	### Copying EDMA Properties
+	if [[ "$edm_version" = *"8.8"* ]]; then
+		cp /etc/edm/configurations/edma/edma_8.8.properties /tmp/EDMA.properties
+	fi
+	if [[ "$edm_version" = *"8.9"* ]]; then
+		cp /etc/edm/configurations/edma/edma_8.9.properties /tmp/EDMA.properties
+	fi
+	if [[ "$edm_version" = *"10.0"* ]]; then
+		cp /etc/edm/configurations/edma/edma_10.0.properties /tmp/EDMA.properties
+	fi
+
+	## Configure EDMA
+	mkdir -p /${mount_home}/app/automation
+	edmaProperties="/tmp/EDMA.properties"
+
+	## Replace EDMA.properties
+	sed -i "s/HubURL=.*/HubURL=http:\/\/${SELENIUM_HUB_SERVICE_HOST}:${SELENIUM_HUB_SERVICE_PORT}/" $edmaProperties
+	sed -i 's/WorkflowRunMode=.*/WorkflowRunMode=REST/' $edmaProperties
+	sed -i 's/WebserviceServerPort=.*/WebserviceServerPort=443/' $edmaProperties
+	sed -i 's/machineHOME=.*/machineHOME=\/${mount_home}\/app\/automation/' $edmaProperties
+	sed -i 's/DownloadDirectory=.*/DownloadDirectory=\/${mount_home}\/app\/automation/' $edmaProperties
+	sed -i 's/browser=.*/browser=DockerGoogleChrome/' $edmaProperties
+	sed -i 's/browserLinuxPath=.*/browserLinuxPath=/' $edmaProperties
+	sed -i 's/logLevel=.*/logLevel=INFO/' $edmaProperties
+  
+  	### Remove Existing Authentication
+  	sed -i '/AuthType=/d' $edmaProperties
+  	sed -i '/client_Id=/d' $edmaProperties
+  	sed -i '/grant_Type=/d' $edmaProperties
+  	sed -i '/Keycloak.client.secret=/d' $edmaProperties
+  	sed -i '/scope=/d' $edmaProperties
+  	sed -i '/oauthusername=/d' $edmaProperties
+  	sed -i '/oauthpassword=/d' $edmaProperties
+  	sed -i '/Keycloak.OpenId.Token.Url=/d' $edmaProperties
+  	
+	## Replace Authentication
+	echo "" >> $edmaProperties
+	echo "############################################" >> $edmaProperties
+	echo "AuthType=OIDC" >> $edmaProperties
+	echo "client_Id=SSO" >> $edmaProperties
+	echo "grant_Type=password" >> $edmaProperties
+	echo "Keycloak.client.secret=${Keycloak_client_secret}" >> $edmaProperties
+	echo "scope=openid" >> $edmaProperties
+	echo "oauthusername=${Service_Account_User}" >> $edmaProperties
+	echo "oauthpassword=${Service_Account_Password}" >> $edmaProperties
+	echo "Keycloak.OpenId.Token.Url=https://${KUBE_EXTERNAL_LB}/auth/realms/${edm_environment}/protocol/openid-connect/token" >> $edmaProperties
+	echo "############################################" >> $edmaProperties
+	
+	## Update Users
+	### Delete existing users
+	sed -i '/^User./d' $edmaProperties
+	echo "############################################" >> $edmaProperties
+	echo "### User Details" >> $edmaProperties
+	edmUsers=$(echo "$(env)" | grep '^ApplicationUser_')
+	for edmUser in $edmUsers;
+	do
+		user=$(echo "$edmUser" | cut -d "=" -f 2)
+		echo $user
+		passwordVariable="ApplicationPassword_${user}"
+		password="${!passwordVariable}"
+		echo "$user $password"
+		echo "User.${user}.name=${user}" >> $edmaProperties
+		echo "User.${user}.password=${password}" >> $edmaProperties
+	done
+	echo "############################################" >> $edmaProperties
+
+	## Replace Assertion
+	echo "############################################" >> $edmaProperties
+	echo "Assertion=SoftAssert" >> $edmaProperties
+	echo "############################################" >> $edmaProperties
+  
+	## Replace Elasticsearch url
+	sed -i "s/Datastaging.Url=.*/Datastaging.Url=http:\/\/${KUBE_INTERNAL_LB_elastic}:${ELASTICSEARCH_MASTER_SERVICE_PORT}\/${edm_elasticsearch_index_staging}/" $edmaProperties
+	sed -i "s/ReststagingURL=.*/ReststagingURL=http:\/\/${KUBE_INTERNAL_LB_elastic}:${ELASTICSEARCH_MASTER_SERVICE_PORT}\/${edm_elasticsearch_index_staging}\/_delete_by_query\//" $edmaProperties
+            
+	## Replace Skip Suites
+	echo "" >> $edmaProperties
+	echo "############################################" >> $edmaProperties
+	SkipSuites="GSODesignerConnectivity"
+	if [ "$edm_elasticsearch" == "false" ]; then
+		SkipSuites="${SkipSuites},StagingVerification"
+	fi
+	echo "SkipSuites=${SkipSuites}" >> $edmaProperties
+	echo "############################################" >> $edmaProperties
+
+	SSL_Arguments="${SSL_Argument}"
+  
+	## Replace variables
+	cd /ext/app/Edma 
+	envsubst < $edmaProperties > EDMA.properties
+	edmaProperties="/ext/app/Edma/EDMA.properties"
+}

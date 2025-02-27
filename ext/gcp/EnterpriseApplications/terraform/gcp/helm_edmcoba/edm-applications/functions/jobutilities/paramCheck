@@ -1,0 +1,19 @@
+function paramCheck() 
+{
+	paramCheckStatus="Failed"
+	if [[ $1 -lt $2 ]]; then
+		echo "ERROR - Parameter Check - Insufficent arguments"
+		echo "ERROR - Parameter Check - Insufficent arguments - Failed  $(date +'%d-%b-%Y %T')"
+		echoLog "ERROR" "Parameters - Check - Failed" "Job ${job_name}" >>$job_log
+		return
+	fi
+
+	if [[ $1 -gt $3 ]]; then
+		echo "ERROR - Parameter Check - Arguments mismatch"
+		echo "ERROR - Parameter Check - Arguments mismatch - Failed  $(date +'%d-%b-%Y %T')"
+		echoLog "ERROR" "Parameters - Check - Failed" "Job ${job_name}" >>$job_log
+		return
+	fi
+	echoLog "INFO" "Parameters - Check - Completed" "Job ${job_name}" >>$job_log
+	paramCheckStatus="Completed"
+}

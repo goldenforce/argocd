@@ -1,0 +1,93 @@
+### Configure Gem
+function configureGem()
+{
+	## Initialize
+	configureGemStatus="Failed"
+	configurePlatformStateSetTaskStatus="Failed"
+	schemaDetails="/ext/app/Gem/gem.properties"          
+	passwordDetails="/ext/app/Gem/.passwords.txt"
+	
+	now=`date -u '+%Y%m%d_%H%M'`
+	configureGemStartTime=$(date +%s)
+	echoLog "INFO" "Job - $(hostname) - Image - Repository - ${application_image}" "Configure Gem" "True" | tee -a ${configureGemLogFile}
+	echoLog "INFO" "All - Configurations - Begin" "Configure Gem" | tee -a ${configureGemLogFile}
+
+	## Set Gem properties
+	__configureGemSetConfigurations
+
+	## Execute GEM 
+	echoLog "INFO" "Executing - Gem - Started" "Configure Gem" | tee -a ${configureGemLogFile}
+	cd /ext/app/Gem/bin
+	./Encode_Passwords > ${configureGemWorkFolder}/work/EncodePassword.log
+	./Installation > ${configureGemWorkFolder}/work/Installation.log 2>${configureGemWorkFolder}/work/Installation.err
+
+	gemStatus="/ext/app/Gem/logs/GEM_Status.log"
+	gemErrorLog="${configureGemWorkFolder}/work/Installation.err"
+	touch $gemErrorLog
+	installationErrorCount=`grep -i 'ERROR\|FATAL:' ${configureGemWorkFolder}/work/Installation.err | wc -l`
+	if [ -f "$gemStatus" ]; then
+		cp $schemaDetails ${configureGemWorkFolder}/work
+		cp $gemStatus ${configureGemWorkFolder}/work/GEM_Status.log
+		if [ -n "$(ls -d /ext/app/Gem/bin/workspace/*.log 2> /dev/null)" ]; then
+			cp /ext/app/Gem/bin/workspace/*.log ${configureGemWorkFolder}/workspace
+		fi
+		if [ -n "$(ls -d /ext/app/Gem/logs/*.log 2> /dev/null)" ]; then
+			cp /ext/app/Gem/logs/*.log ${configureGemWorkFolder}/workspace
+		fi                
+		gemError=`cat $gemStatus | grep -i 'FAIL' | wc -l`
+		if [ $gemError -eq 0 ] && [ $installationErrorCount -eq 0 ] ; then
+			configureGemStatus="Completed"
+		fi
+	fi
+
+	## Final
+	computeElapsedTime ${configureGemStartTime}
+	rm -rf ${configureGemWorkFolder}/work/Encode*
+	rm -rf ${configureGemWorkFolder}/work/gem.properties
+	rm -rf ${configureGemWorkFolder}/ears
+	if [ "$configureGemStatus" == "Failed" ]; then
+		echoLog "ERROR" "All - Configurations - Failed - ${elapsedTimeTaken}" "Configure Gem" | tee -a ${configureGemLogFile}
+		return
+	else
+		configureGemStatus="Completed"
+		echoLog "INFO" "All - Configurations - Completed - ${elapsedTimeTaken}" "Configure Gem" | tee -a ${configureGemLogFile}
+	fi
+
+	### Process Platform State
+	configurePlatformStateSetTask "configureGem" "${edm_version}" "${configureGemStatus}"
+}
+
+## Configure Gem
+function __configureGemSetConfigurations()
+{
+	## Bash profile
+	cd /ext/app
+	. ./.bash_profile
+ 
+	## Copy properties
+	gem_template="gem_template_postgresql_8.8.properties"
+	if [ "$DatabaseType" == "oracle" ]; then
+		gem_template="gem_template_oracle_8.8.properties"
+	fi
+	envsubst < ${configurations_folder}/gem/${gem_template} > $schemaDetails
+	envsubst < ${configurations_folder}/gem/gem_password.properties > $passwordDetails
+	echoLog "INFO" "Configurations - Properties - Completed" "Configure Gem" | tee -a ${configureGemLogFile}
+
+	## Configure Delta Keycloak
+	deltaConfigurationFile="/ext/app/Gem/bin/serverBasedScripts/config/jbossstandalone/Configuration.xml"
+	echo -e "cd /Root/ServerProcesses/ServerProcess[@serverProcessReference='EnableKeycloak']/@serverProcessAction\nset Y\nsave" | xmllint --shell $deltaConfigurationFile > /dev/null 2>/dev/null
+	echoLog "INFO" "Configurations - Delta - Completed" "Configure Gem" | tee -a ${configureGemLogFile}
+	
+	# Replacing Schema/Environment creation details
+	unset installed_edm_version
+	if [ -f "$start_edm" ]; then
+		export $( cat ${start_edm} | xargs )
+	fi
+	sed -i 's/CREATE_SCHEMAS=.*/CREATE_SCHEMAS=false/' $schemaDetails
+	if [ ! -z ${installed_edm_version} ]; then
+		sed -i 's/CREATE_ENV=.*/CREATE_ENV=false/' $schemaDetails
+	else
+		sed -i 's/CREATE_ENV=.*/CREATE_ENV=true/' $schemaDetails
+	fi
+	echoLog "INFO" "Configurations - Schemas - Completed" "Configure Gem" | tee -a ${configureGemLogFile}
+}

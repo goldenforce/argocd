@@ -1,0 +1,78 @@
+function wkfStatusCheck()
+{
+	final_url_application=$1
+	identifier=$2
+	access_token=$3
+	token_expiry_time=$4
+	final_url_keycloak=$5
+	client_id=$6
+	runtime=${7}
+	endtime=${8}
+
+	finished=$(curl --insecure -s -H "Accept: application/json" -H "Content-Type: application/json" -X GET ${final_url_application}status/${identifier} -H 'authorization: Bearer '${access_token}'' -H 'content-type: application/json' | jq -r .finished)
+	failed=$(curl --insecure -s -H "Accept: application/json" -H "Content-Type: application/json" -X GET ${final_url_application}status/${identifier} -H 'authorization: Bearer '${access_token}'' -H 'content-type: application/json' | jq -r .failed)
+
+	if [[ "$finished" == "true" ]]; then
+		return 0
+	else
+		while [[ "$finished" == "false" ]]; 
+		do
+			if [[ ! -z "${runtime}" ]] && [[ $(date -u +%s) -lt $endtime ]]; then
+				while [[ $(date -u +%s) -lt $endtime ]]; 
+				do
+					if [[ $(date -u +%s) -ge $token_expiry_time ]]; then
+						values=($(getAccessToken "$final_url_keycloak/realms/$edm_environment/protocol/openid-connect/token" "$Service_Account_User" "$Service_Account_Password" "$client_id" "$Keycloak_client_secret")) 
+						access_token="${values[0]}" 
+						token_expiry_time="${values[1]}"
+						if [ -z $token_expiry_time ]; then
+							token_expiry_time=0
+						fi
+					fi
+					finished=$(curl --insecure -s -H "Accept: application/json" -H "Content-Type: application/json" -X GET ${final_url_application}status/${identifier} -H 'authorization: Bearer '${access_token}'' -H 'content-type: application/json' | jq -r .finished)
+					failed=$(curl --insecure -s -H "Accept: application/json" -H "Content-Type: application/json" -X GET ${final_url_application}status/${identifier} -H 'authorization: Bearer '${access_token}'' -H 'content-type: application/json' | jq -r .failed)
+					if [[ "$finished" == "true" ]]; then
+						return 0
+					elif [[ "$failed" == "true" ]]; then
+						return 1
+					fi
+					sleep 5
+				done
+				return 2
+			else
+				if [[ $(date -u +%s) -ge $token_expiry_time ]]; then
+					values=($(getAccessToken "$final_url_keycloak/realms/$edm_environment/protocol/openid-connect/token" "$Service_Account_User" "$Service_Account_Password" "$client_id" "$Keycloak_client_secret")) 
+					access_token="${values[0]}" 
+					token_expiry_time="${values[1]}"
+					if [ -z $token_expiry_time ]; then
+						token_expiry_time=0
+					fi
+				fi
+				finished=$(curl --insecure -s -H "Accept: application/json" -H "Content-Type: application/json" -X GET ${final_url_application}status/${identifier} -H 'authorization: Bearer '${access_token}'' -H 'content-type: application/json' | jq -r .finished)
+				failed=$(curl --insecure -s -H "Accept: application/json" -H "Content-Type: application/json" -X GET ${final_url_application}status/${identifier} -H 'authorization: Bearer '${access_token}'' -H 'content-type: application/json' | jq -r .failed)
+				if [[ "$finished" == "true" ]]; then
+					return 0
+				elif [[ "$failed" == "true" ]]; then
+					return 1
+				fi
+				sleep 5
+			fi
+		done
+	fi
+	if [[ $(date -u +%s) -ge $token_expiry_time ]]; then
+		values=($(getAccessToken "$final_url_keycloak/realms/$edm_environment/protocol/openid-connect/token" "$Service_Account_User" "$Service_Account_Password" "$client_id" "$Keycloak_client_secret")) 
+		access_token="${values[0]}" 
+		token_expiry_time="${values[1]}"
+		if [ -z $token_expiry_time ]; then
+			token_expiry_time=0
+		fi
+	fi
+	finished=$(curl --insecure -s -H "Accept: application/json" -H "Content-Type: application/json" -X GET ${final_url_application}status/${identifier} -H 'authorization: Bearer '${access_token}'' -H 'content-type: application/json' | jq -r .finished)
+	failed=$(curl --insecure -s -H "Accept: application/json" -H "Content-Type: application/json" -X GET ${final_url_application}status/${identifier} -H 'authorization: Bearer '${access_token}'' -H 'content-type: application/json' | jq -r .failed)
+	if [[ "$finished" == "true" ]]; then
+		return 0
+	elif [[ "$failed" == "true" ]]; then
+		return 1
+	elif [[ "$finished" == "false" ]] || [[ "$failed" == "false" ]]; then
+		return 3
+	fi
+}

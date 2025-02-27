@@ -1,0 +1,113 @@
+### Configure Domains
+function configureDomains()
+{
+	## Initialize
+	configureDomainsStatus="Failed"
+	configurePlatformStateSetTaskStatus="Failed"
+
+	now=`date -u '+%Y%m%d_%H%M'`
+	configureDomainsStartTime=$(date +%s)
+	echoLog "INFO" "Job - $(hostname) - Image - Repository - ${application_image}" "Configure Domains" "True" | tee -a ${configureDomainsLogFile}
+	echoLog "INFO" "All - Configurations - Begin" "Configure Domains" | tee -a ${configureDomainsLogFile}
+
+	## Copy Data domains to mount
+	domainsPresent=$(ls -A /ext/app/Gem/domains | wc -l)
+	if [ $domainsPresent -gt 0 ]; then
+		rm -rf /${mount_home}/app/data/domains/${edm_version}
+		mkdir -p /${mount_home}/app/data/domains/${edm_version}
+		cp -r /ext/app/Gem/domains/* /${mount_home}/app/data/domains/${edm_version}
+		echoLog "INFO" "Copy To - Mount - Completed" "Configure Domains" | tee -a ${configureDomainsLogFile}
+	else
+		echoLog "INFO" "All - Not Present - Completed" "Configure Domains" | tee -a ${configureDomainsLogFile}
+		configureDomainsStatus="Completed"
+		configureDomainsPlatformStateSetTask
+		return
+	fi
+
+	## Check for startEDM
+	if [ ! -f "${start_edm}" ]; then
+		echoLog "ERROR" "startEDM - Accessible - Failed" "Configure Domains" | tee -a ${configureDomainsLogFile}
+		configureDomainsPlatformStateSetTask
+		return
+	else
+		echoLog "INFO" "startEDM - Accessible - Completed" "Configure Domains" | tee -a ${configureDomainsLogFile}
+	fi
+
+	## Check if Orchestrator running
+	sleep 180
+	echoLog "INFO" "Sleep - 180 seconds - Completed" "Configure Domains" | tee -a ${configureDomainsLogFile}
+	orchestratorRunning=$(checkIfOrchestratorAccessible)
+	if [ "${orchestratorRunning}" == "False" ]; then
+		echoLog "ERROR" "Orchestrator - Access - Failed" "Configure Domains" | tee -a ${configureDomainsLogFile}
+		configureDomainsPlatformStateSetTask
+		return
+	else
+		echoLog "INFO" "Orchestrator - Access - Completed" "Configure Domains" | tee -a ${configureDomainsLogFile}
+	fi
+	
+	## Replace HOME_DIR
+	cd /ext/app/Gem/domains/properties
+	find . -type f -name "*.json" -exec sed -i'' -e "s|HOME_DIR|/${mount_home}/app/data/domains/${edm_version}|g" {} +
+	echoLog "INFO" "Domains - Replace HOME - Completed" "Configure Domains" | tee -a ${configureDomainsLogFile}
+
+	## Copy Conf
+	cd /ext/app
+	cp -R /etc/edm/configurations/loaddomains .
+	echoLog "INFO" "Domains - Copy Conf. - Completed" "Configure Domains" | tee -a ${configureDomainsLogFile}
+     
+	## Load Domains
+	cd /ext/app/loaddomains
+	configureDomainsFilesToBeProcessed="/ext/app/loaddomains/domainfiles.txt"
+	while IFS=, read -r category workflow configuration event
+	do
+		if [[ $category == "category" ]]; then
+			continue
+		fi
+		categoryFile="${configureDomainsWorkFolder}/work/${category}.log"
+		execWkf ${workflow} ${configuration} ${event} $edm_default_orchestrator >> $categoryFile
+		errorCount=`grep -i "Error" $categoryFile | wc -l`
+		if [ $errorCount -eq 0 ]; then
+			echoLog "INFO" "Domains - ${category} - Completed" "Configure Domains" | tee -a ${configureDomainsLogFile}
+		else
+			echoLog "ERROR" "Domains - ${category} - Failed" "Configure Domains" | tee -a ${configureDomainsLogFile}
+			configureDomainsPlatformStateSetTask
+			return 
+		fi
+	done < $configureDomainsFilesToBeProcessed
+
+    ## Run BECH cleanup
+    sqlCommand="delete from ft_t_bech where cache_typ not in ('CONCRETE_JAR')"
+	dbQueryExecute "BECH_cleanup" "${sqlCommand}" "${configureDomainsWorkFolder}/work"
+	if [ "${dbQueryExecuteStatus}" == "Failed" ]; then
+		echoLog "ERROR" "Cleanup - BECH - Failed" "Configure Domains" | tee -a ${configureDomainsLogFile}
+		configureDomainsPlatformStateSetTask
+		return
+	else
+		echoLog "INFO" "Cleanup - BECH - Completed" "Configure Domains" | tee -a ${configureDomainsLogFile}
+	fi
+
+	## Restart EDM
+	restartEDM 
+	echoLog "INFO" "Restart - EDM - Completed" "Configure Domains" | tee -a ${configureDomainsLogFile}
+
+	## Wait for Workstation access
+	workstationRunning=$(checkIfWorkstationAccessible)
+	if [ "$workstationRunning" == "False" ]; then
+		echoLog "ERROR" "Workstation - Accessible - Failed" | tee -a $configureDomainsLogFile
+		configureDomainsPlatformStateSetTask
+		return         
+	else
+		echoLog "INFO" "Workstation - Accessible - Completed" | tee -a $configureDomainsLogFile
+	fi
+
+	## Final
+	computeElapsedTime ${configureDomainsStartTime}
+	echoLog "INFO" "All - Configurations - Completed - ${elapsedTimeTaken}" "Configure Domains" | tee -a ${configureDomainsLogFile}
+	configureDomainsStatus="Completed"
+	configureDomainsPlatformStateSetTask
+}
+function configureDomainsPlatformStateSetTask()
+{
+	### Process Platform State
+	configurePlatformStateSetTask "configureDomains" "${edm_version}" "${configureDomainsStatus}"
+}

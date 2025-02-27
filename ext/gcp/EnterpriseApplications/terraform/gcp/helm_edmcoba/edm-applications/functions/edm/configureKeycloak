@@ -1,0 +1,425 @@
+### Configure Keycloak
+function configureKeycloak()
+{
+	## Initialize
+	customKeycloakRoles="$1"
+	
+	configureKeycloakStatus="Failed"
+	configurePlatformStateSetTaskStatus="Failed"
+	now=`date -u '+%Y%m%d_%H%M'`
+	configureKeycloakStartTime=$(date +%s)
+	echoLog "INFO" "Job - $(hostname) - Image - Repository - ${application_image}" "Configure Keycloak" "True" | tee -a ${configureKeycloakLogFile}
+	echoLog "INFO" "All - Configurations - Begin" "Configure Keycloak" | tee -a ${configureKeycloakLogFile}
+
+	## Check Keycloak running
+	echoLog "INFO" "Check - Access - Started" "Configure Keycloak" | tee -a $configureKeycloakLogFile	
+	keycloakRunning=$(checkIfKeycloakAccessible)
+	if [ "$keycloakRunning" == "False" ]; then
+		echoLog "ERROR" "Check - Access - Failed" "Configure Keycloak" | tee -a $configureKeycloakLogFile	
+		return
+	fi
+	echoLog "INFO" "Check - Access - Completed" "Configure Keycloak" | tee -a $configureKeycloakLogFile	
+
+	## Initialize
+	keycloakIntialize="false"
+	__configureKeycloakinitialize
+	## Realm Configuration
+		__processKeycloakRealmConfiguration
+	## Realm Theme Configuration
+		__processKeycloakRealmTheme
+	## Realm Clients
+	__processKeycloakRealmClients
+	## Realm Roles
+	__processKeycloakRealmRoles
+	## Delete Realm Users
+	__processKeycloakRealmUsersDelete
+	## Realm Users
+	__processKeycloakRealmUsers
+	## Get Realm Roles
+	__getKeycloakRealmRoles
+	## Get Realm Users
+	__getKeycloakRealmUsers
+	## Create Realm Users/Roles Mapping
+	__processKeycloakRealmUsersRolesMapping
+		
+	## Final
+	rm -rf ${workDir}/*.json
+	configureKeycloakStatus="Completed"
+	computeElapsedTime ${configureKeycloakStartTime}
+	echoLog "INFO" "All - Configurations - Completed - ${elapsedTimeTaken}" "Configure Keycloak" | tee -a ${configureKeycloakLogFile}
+
+	### Process Platform State
+	configurePlatformStateSetTask "configureKeycloak" "${edm_version}" "${configureKeycloakStatus}"
+}
+
+### Initialize
+function __configureKeycloakinitialize(){
+	### Delta Configurations
+	deltaConfigurationFile=/ext/app/configureKeycloak/Configuration.xml
+	deltaPasswordFile=/ext/app/configureKeycloak/passwords.txt
+	jbossHome="/ext/app/jbossstandalone/software/keycloak"
+	
+	### Certificate Details
+	trustJks="/ext/app/protected/Certificates/${Certificate_trustKeyStoreFile}"
+	
+	### Keycloak Details
+	keycloakUrl="https://${KUBE_EXTERNAL_LB}"
+	keycloakRealm="${edm_environment}"
+
+	### Keycloak environment variables defined
+	keycloakUser="$KEYCLOAK_ADMIN"
+	keycloakPassword="$KEYCLOAK_ADMIN_PASSWORD"
+	keycloakClientSecret="$Keycloak_client_secret"
+
+	### EDM Details
+	### Cluster Details
+	edmOrchestratorClusters=`xmllint --xpath '//Clusters/Cluster[@clusterCategory="Orchestrator"]/@clusterName' $deltaConfigurationFile | sed -r 's/"//g' | sed -r 's/clusterName=//g'`
+
+	### Client Details
+	declare -gA edmClientsRoles 
+	edmWarClients=`xmllint --xpath '//Wars/War/@warReference' $deltaConfigurationFile | sed -r 's/"//g' | sed -r 's/warReference=//g'`
+	edmUtilityClients=`xmllint --xpath '//UtilityApplications/UtilityApplication/@utilityApplicationReference' $deltaConfigurationFile | sed -r 's/"//g' | sed -r 's/utilityApplicationReference=//g'`
+	for edmWarClient in $edmWarClients
+	do
+		edmWarClientRoles=`xmllint --xpath '//Roles/Role[@warReference="'$edmWarClient'"]/@roleReference' $deltaConfigurationFile 2> /dev/null | sed -r 's/"//g' | sed -r 's/roleReference=//g'`
+		if [[ "${edmWarClient}" == "Orchestrator"* ]]; then
+			for edmOrchestratorCluster in $edmOrchestratorClusters
+			do
+				orchestratorClient=`echo ${edmWarClient} | sed -r "s/Orchestrator/${edmOrchestratorCluster}/g"`  
+				edmClientsRoles[${orchestratorClient}]="${edmWarClientRoles}"
+			done
+		else
+			edmClientsRoles[${edmWarClient}]="${edmWarClientRoles}"
+		fi
+	done
+	for edmUtilityClient in $edmUtilityClients
+	do
+		edmUtilityClientRoles=`xmllint --xpath '//UtilityApplications/UtilityApplication[@utilityApplicationReference="'$edmUtilityClient'"]/@utilityApplicationRoles' $deltaConfigurationFile | sed -r 's/"//g' | sed -r 's/utilityApplicationRoles=//g' | sed -r 's/,/ /g'`
+		edmClientsRoles[${edmUtilityClient}]="${edmUtilityClientRoles}"
+	done
+
+	### EDM Users
+	declare -gA edmUsersDetails 
+	users=`env | grep ApplicationUser`
+	usersRolesFound=""
+	for user in $users; 
+	do
+		user=$(echo "$user" | cut -d "=" -f 2)
+		edmUser=${user,,}
+		passwordVariable="ApplicationPassword_${edmUser}"
+		edmUserPassword="${!passwordVariable}"
+		rolesVariable="ApplicationRoles_${edmUser}"
+		edmUserRoles="${!rolesVariable}"
+		edmUserRoles=`echo ${edmUserRoles} | sed -r 's/,/ /g' | tr ' ' '\n' | sort -n | uniq`
+		usersRolesFound="${usersRolesFound} ${edmUserRoles}"
+		edmUsersDetails[${edmUser}]="${edmUserPassword}:${edmUserRoles}"
+	done
+	
+	### EDM Roles
+	edmRoles="${edm_roles} ${usersRolesFound}"
+	edmRoles=`echo ${edm_roles} | sed -r 's/,/ /g' | tr ' ' '\n' | sort -n | uniq`
+	if [ ! -z "$customKeycloakRoles" ]; then
+		edmRoles="$edmRoles $customKeycloakRoles"
+	fi	
+
+	### Service Account
+	serviceAccountRoles=`echo ${edmRoles} | sed -r 's/ /,/g'`
+	edmUsersDetails[${Service_Account_User}]="${Service_Account_Password}:${edmRoles}"
+	
+	### Work directory
+	workDir=${configureKeycloakWorkFolder}/work
+	mkdir -p ${workDir}
+	
+	### Create Logs
+	echoLog "INFO" "Configurations - Work Directory - $workDir" "Configure Keycloak" | tee -a $configureKeycloakLogFile
+	echoLog "INFO" "Configurations - Jboss Home - $jbossHome" "Configure Keycloak" | tee -a $configureKeycloakLogFile
+	echoLog "INFO" "Configurations - Keycloak Url - $keycloakUrl" "Configure Keycloak" | tee -a $configureKeycloakLogFile
+	echoLog "INFO" "Configurations - Keycloak User - $keycloakUser" "Configure Keycloak" | tee -a $configureKeycloakLogFile
+	echoLog "INFO" "Configurations - Keycloak Realm - $keycloakRealm" "Configure Keycloak" | tee -a $configureKeycloakLogFile
+}
+
+### Function to execute keycloak Initialization
+function __keycloakCLIInitialize(){
+	keycloakCertCommand="${jbossHome}/bin/kcadm.sh config truststore --trustpass ${Certificate_trustKeyStorePassphrase} ${trustJks}" 
+	keycloakLoginCommand="${jbossHome}/bin/kcadm.sh config credentials --server=${keycloakUrl}/auth --realm=master --user=${keycloakUser} --password=${keycloakPassword} | grep -v 'WARNING' | grep -v 'Cookie'"
+	keycloakCertCommandExe=$($keycloakCertCommand 2>&1)
+	keycloakLoginCommandExe=$(eval "$keycloakLoginCommand" 2>&1)
+	checkError=`eval $keycloakCommand`
+	echoLog "INFO" "Initializaing Keycloak: ${keycloakCertCommandExe} ${keycloakLoginCommandExe}"
+	keycloakIntialize="true"
+}
+### Function to execute keycloak
+function __keycloakCLIExecute(){
+	argumentFunction=$1
+	argumentsPassed=$2
+	keycloakCommand="${jbossHome}/bin/kcadm.sh ${argumentFunction} ${argumentsPassed}"
+	tryMax=5
+	tryStart=1
+	while true;
+	do
+		if [ "$keycloakIntialize" == "false" ]; then
+			__keycloakCLIInitialize
+		fi		 
+		checkError=$(eval "$keycloakCommand" 2>&1)
+		if [[ "$checkError" == *"Session has expired"* || "$checkError" == *"No server specified"* || "$checkError" == *"HTTP request error"* || "$checkError" == *"Resource not found"*  || "$checkError" == *"Unauthorized"* ]]; then
+			echoLog "INFO" "Executing - ${keycloakCommand} - Retry" "Configure Keycloak" | tee -a $configureKeycloakLogFile	
+			((tryStart += 1))
+			sleep 60
+			__keycloakCLIInitialize
+	  	else
+	  		break
+		fi
+		if [ $tryStart -gt $tryMax ]; then
+			echoLog "ERROR" "Executing - ${argumentFunction} - Failed" "Configure Keycloak" | tee -a $configureKeycloakLogFile	
+  			exit 1
+		fi
+	done	
+}
+
+### Process Configurations
+
+### Process Realm
+function __processKeycloakRealmConfiguration(){
+	cat <<EOT > ${workDir}/createRealm.json
+	{
+		"id": "${keycloakRealm}",
+		"realm": "${keycloakRealm}",
+		"loginTheme": "GoldenSource",
+		"accountTheme": "GoldenSource",
+		"adminTheme": "GoldenSource",
+		"emailTheme": "GoldenSource",
+		"enabled": true
+	}
+EOT
+	__keycloakCLIExecute "create realms" "-f ${workDir}/createRealm.json"
+	echoLog "INFO" "Realm - ${keycloakRealm} - Completed" "Configure Keycloak" | tee -a $configureKeycloakLogFile	
+}
+
+### Process Realm Themes
+function __processKeycloakRealmTheme(){
+	__keycloakCLIExecute "update realms/master -s loginTheme=GoldenSource -s accountTheme=GoldenSource -s adminTheme=GoldenSource -s emailTheme=GoldenSource" ""
+	echoLog "INFO" "Realm - Master Theme - Completed" "Configure Keycloak" | tee -a $configureKeycloakLogFile	
+	__keycloakCLIExecute "update realms/${keycloakRealm} -s loginTheme=GoldenSource -s accountTheme=GoldenSource -s adminTheme=GoldenSource -s emailTheme=GoldenSource" ""
+	echoLog "INFO" "Realm - ${keycloakRealm} Theme - Completed" "Configure Keycloak" | tee -a $configureKeycloakLogFile	
+}
+
+
+### Process Clients
+function __processKeycloakRealmClients(){
+	for edmClientsRolesKey in ${!edmClientsRoles[@]}
+	do
+		realmClient=${edmClientsRolesKey}
+		realmClientRoles=${edmClientsRoles[$edmClientsRolesKey]}
+		realmClientProtocolMappers=""
+		i=1
+		realmClientRolesCount=`echo $realmClientRoles | wc -w`
+		for realmClientRole in $realmClientRoles;
+		do
+			realmClientProtocolMappersDelimiter=""
+			if [ $i -ne $realmClientRolesCount ]; then
+				realmClientProtocolMappersDelimiter=","
+			fi
+			__createKeycloakRealmClientProtocolMapperJsonConfiguration $realmClientRole
+			realmClientProtocolMappers="${realmClientProtocolMappers}
+				${realmClientProtocolMapperJson}${realmClientProtocolMappersDelimiter}"
+			i=$(( i + 1 ))
+		done 
+		__createKeycloakRealmClientJsonConfiguration "$realmClient" "$realmClientProtocolMappers"
+		__keycloakCLIExecute "create clients -r ${keycloakRealm}" "-f ${workDir}/createRealmClient-${realmClient}.json"
+		__keycloakCLIExecute "update clients/${keycloakRealm}-${realmClient} -r ${keycloakRealm}" "-f ${workDir}/createRealmClient-${realmClient}.json"
+		echoLog "INFO" "Realm Client - ${realmClient} - Completed" "Configure Keycloak" | tee -a $configureKeycloakLogFile	
+	done
+}
+
+### Create Client Protocol mappers
+function __createKeycloakRealmClientProtocolMapperJsonConfiguration(){
+	clientRole=$1
+	read -d '' realmClientProtocolMapperJson << EOF
+		{
+			"name": "${clientRole}",
+			"protocol": "openid-connect",
+			"protocolMapper": "oidc-role-name-mapper",
+			"consentRequired": false,
+			"config": {
+				"new.role.name": "${clientRole}",
+				"role": "${clientRole}"
+			}
+		}
+EOF
+}	
+
+### Create Client configuration
+function __createKeycloakRealmClientJsonConfiguration(){
+	realmClient=$1
+	realmClientProtocolMappers=$2
+	cat <<EOT > ${workDir}/createRealmClient-${realmClient}.json
+	{
+		"clientId": "${realmClient}",
+		"id": "${keycloakRealm}-${realmClient}",
+		"protocol": "openid-connect",
+		"publicClient": false,
+		"frontchannelLogout": false,
+		"clientAuthenticatorType": "client-secret",
+		"secret": "${keycloakClientSecret}",
+		"redirectUris": ["*"],
+		"webOrigins": [],
+		"protocolMappers": 
+		[
+			{
+				"name": "${realmClient}",
+				"protocol": "openid-connect",
+				"protocolMapper": "oidc-audience-mapper",
+				"consentRequired": false,
+				"config": {
+					"included.client.audience": "${realmClient}",
+					"id.token.claim": "true",
+					"access.token.claim": "true",
+					"userinfo.token.claim": "false"
+				}
+			},
+			${realmClientProtocolMappers}
+		],
+		"attributes": {
+	        "access.token.lifespan": "86400000"
+		},
+	    "authenticationFlowBindingOverrides": {
+		}
+	}
+EOT
+}
+
+### Create Individual Roles
+function __createKeycloakRealmRoleJsonConfiguration(){
+	realmRole=$1
+	read -d '' realmRoleJson << EOF
+		{
+			"name": "${edmRole}"
+		}
+EOF
+}	
+
+### Process Roles
+function __processKeycloakRealmRoles(){
+	for edmRole in $edmRoles
+	do
+		__createKeycloakRealmRoleJsonConfiguration $edmRole
+		echo ${realmRoleJson} > ${workDir}/createRealmRole-${edmRole}.json
+		__keycloakCLIExecute "create realms/${keycloakRealm}/roles -r ${keycloakRealm}" "-f ${workDir}/createRealmRole-${edmRole}.json"
+		echoLog "INFO" "Realm Role - ${edmRole} - Completed" "Configure Keycloak" | tee -a $configureKeycloakLogFile	
+	done
+}
+
+### Process Users Delete
+function __processKeycloakRealmUsersDelete(){
+	__keycloakCLIInitialize
+	userIds=$(${jbossHome}/bin/kcadm.sh get users -r ${keycloakRealm} --fields id --format csv)
+
+	# Delete Each User
+	for userId in $userIds; do
+		userId=`echo $userId | tr -d '"'`
+		__keycloakCLIExecute "delete users/$userId -r ${keycloakRealm}" ""
+	done
+	echoLog "INFO" "Realm Users - Deleted - Completed" "Configure Keycloak" | tee -a $configureKeycloakLogFile
+}
+
+### Create Individual Users
+function __createKeycloakRealmUserJsonConfiguration(){
+	realmUser=$1
+	realmUserPassword=$2
+	read -d '' realmUserJson << EOF
+		{
+			"username": "${realmUser}",
+			"email": "${realmUser}@keycloak.com",
+			"firstName": "${realmUser}",
+			"lastName": "${realmUser}",
+			"enabled": "true",
+			"credentials": [
+				{
+					"type": "password",
+					"value": "${realmUserPassword}",
+					"temporary": false
+				}
+			]	
+		}
+EOF
+}	
+
+### Process Users
+function __processKeycloakRealmUsers(){
+	for userKey in ${!edmUsersDetails[@]}
+	do
+		realmUser=${userKey}
+		realmUserPassword=`echo ${edmUsersDetails[${userKey}]} | cut -d ":" -f1` 
+		__createKeycloakRealmUserJsonConfiguration $realmUser $realmUserPassword
+		echo ${realmUserJson} > ${workDir}/createRealmUser-${realmUser}.json
+		__keycloakCLIExecute "create realms/${keycloakRealm}/users -r ${keycloakRealm}" "-f ${workDir}/createRealmUser-${realmUser}.json"
+		echoLog "INFO" "Realm User - ${realmUser} - Completed" "Configure Keycloak" | tee -a $configureKeycloakLogFile	
+		__keycloakCLIExecute "set-password -r ${keycloakRealm} --username ${realmUser} --new-password ${realmUserPassword}"
+		echoLog "INFO" "Realm UserPwd - ${realmUser} - Completed" "Configure Keycloak" | tee -a $configureKeycloakLogFile	
+	done
+}
+
+### Get Roles
+function __getKeycloakRealmRoles(){
+	__keycloakCLIInitialize
+	${jbossHome}/bin/kcadm.sh get roles -r ${keycloakRealm} > ${workDir}/getRealmRoles.json
+	echoLog "INFO" "Get Realm - Roles - Completed" "Configure Keycloak" | tee -a $configureKeycloakLogFile	
+}
+
+### Get Users
+function __getKeycloakRealmUsers(){
+	__keycloakCLIInitialize
+	${jbossHome}/bin/kcadm.sh get users -r ${keycloakRealm} > ${workDir}/getRealmUsers.json
+	echoLog "INFO" "Get Realm - Users - Completed" "Configure Keycloak" | tee -a $configureKeycloakLogFile	
+}
+
+### Create Users/Roles Mapping
+function __createKeycloakUserRoleMappingJsonConfiguration(){
+	userRole=$1
+	userRoleId=$2
+	read -d '' userRoleMappingJson << EOF
+		{
+		  "id" : "${userRoleId}",
+		  "name" : "${userRole}",
+		  "composite" : false,
+		  "clientRole" : false,
+		  "containerId" : "${keycloakRealm}",
+		  "attributes" : { }
+		}
+EOF
+}	
+
+### Process Users/Roles Mapping
+function __processKeycloakRealmUsersRolesMapping(){
+	realmUserDetails=$(jq -r '.[] | "\(.id)|\(.username)"' ${workDir}/getRealmUsers.json)
+	for realmUserDetail in $realmUserDetails
+	do
+		realmUserId=`echo $realmUserDetail | cut -d "|" -f1`
+		realmUserName=`echo $realmUserDetail | cut -d "|" -f2`
+		realmUserRoles=`echo ${edmUsersDetails[$realmUserName]} | cut -d ":" -f2`
+		if [ -n "$realmUserRoles" ]; then
+			realmUserRolesArray=""
+			i=1
+			realmUserRolesCount=`echo $realmUserRoles | wc -w`
+			for realmUserRole in $realmUserRoles
+			do 
+				realmUserRolesDelimiter=""
+				if [ $i -ne $realmUserRolesCount ]; then
+					realmUserRolesDelimiter=","
+				fi
+				realmUserRoleId=`jq -r ".[] | select(.name==\"${realmUserRole}\").id" ${workDir}/getRealmRoles.json`
+				__createKeycloakUserRoleMappingJsonConfiguration $realmUserRole $realmUserRoleId
+				realmUserRolesArray="${realmUserRolesArray}
+				${userRoleMappingJson}${realmUserRolesDelimiter}"
+				i=$(( i + 1 ))
+			done 
+			realmUserRolesArray="[
+			${realmUserRolesArray}
+			]"
+			echo ${realmUserRolesArray} > ${workDir}/createRealmUserRoles-${realmUserName}.json
+			__keycloakCLIExecute "create users/${realmUserId}/role-mappings/realm -r ${keycloakRealm}" "-f ${workDir}/createRealmUserRoles-${realmUserName}.json"
+			echoLog "INFO" "Realm User Mapping - ${realmUserName} - Completed" "Configure Keycloak" | tee -a $configureKeycloakLogFile
+		fi
+	done
+}
+

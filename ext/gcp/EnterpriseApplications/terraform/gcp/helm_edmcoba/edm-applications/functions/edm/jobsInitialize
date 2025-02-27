@@ -1,0 +1,99 @@
+### Function Initialize Platform Jobs
+function jobsInitialize()
+{
+	### Cleanup
+	rm -rf ${log_all_jobs_summary}
+
+	### Initialize folder
+	mkdir -p /${mount_home}/logs/Initialize/servers
+
+	### Initial Job folders
+
+	## Platform State
+	rm -rf ${configurePlatformstateFolder}
+	mkdir -p ${configurePlatformstateFolder}
+	mkdir -p ${configurePlatformstateFolder}/work
+
+	## Check schemas accessible
+	rm -rf ${checkDatabaseSchemasWorkFolder}
+	mkdir -p ${checkDatabaseSchemasWorkFolder}
+	mkdir -p ${checkDatabaseSchemasWorkFolder}/work
+	
+	## Create Database Schemas
+	rm -rf ${createDatabaseSchemasWorkFolder}
+	mkdir -p ${createDatabaseSchemasWorkFolder}
+	mkdir -p ${createDatabaseSchemasWorkFolder}/work
+	
+	## Configure Elastic Search Index
+	rm -rf ${configureElasticsearchIndexWorkFolder}
+	mkdir -p ${configureElasticsearchIndexWorkFolder}
+	mkdir -p ${configureElasticsearchIndexWorkFolder}/work
+	
+	## Configure Keycloak
+	rm -rf ${configureKeycloakWorkFolder}
+	mkdir -p ${configureKeycloakWorkFolder}
+	mkdir -p ${configureKeycloakWorkFolder}/work
+
+	## Configure Mount
+	rm -rf ${configureMountWorkFolder}
+	mkdir -p ${configureMountWorkFolder}
+	mkdir -p ${configureMountWorkFolder}/work
+
+	## Configure Gem
+	rm -rf ${configureGemWorkFolder}
+	mkdir -p ${configureGemWorkFolder}
+	mkdir -p ${configureGemWorkFolder}/work
+	mkdir -p ${configureGemWorkFolder}/workspace
+	mkdir -p ${configureGemWorkFolder}/ears
+	
+	## Configure Custom Roles
+	rm -rf ${configureCustomRolesWorkFolder}
+	mkdir -p ${configureCustomRolesWorkFolder}
+	mkdir -p ${configureCustomRolesWorkFolder}/work
+
+	## Configure Database Reorg
+	rm -rf ${configureDatabaseReorgWorkFolder}
+	mkdir -p ${configureDatabaseReorgWorkFolder}
+	mkdir -p ${configureDatabaseReorgWorkFolder}/work
+
+	## Configure Domains
+	rm -rf ${configureDomainsWorkFolder}
+	mkdir -p ${configureDomainsWorkFolder}
+	mkdir -p ${configureDomainsWorkFolder}/work
+
+	## Configure DatabaseSQL
+	rm -rf ${configureDatabaseSQLWorkFolder}
+	mkdir -p ${configureDatabaseSQLWorkFolder}
+	mkdir -p ${configureDatabaseSQLWorkFolder}/work
+
+	## Configure Edma
+	rm -rf ${configureEdmaWorkFolder}
+	mkdir -p ${configureEdmaWorkFolder}
+	mkdir -p ${configureEdmaWorkFolder}/work
+
+	now=`date -u '+%Y%m%d_%H%M'`
+	jobsInitializeStartTime=$(date +%s)
+	echoLog "INFO" "Initialize - Folders - Started" "Jobs Summary" | tee -a $log_all_jobs_summary
+
+	### Process Platform State
+	rm -rf ${schemas_verified}
+	configurePlatformStateSetTask "checkDatabaseSchemas" "${edm_version}" "Failed"
+	
+	### Check for StartEDM
+	if [ ! "$(configurePlatformStateGetStatus startEDM)" == "Completed" ]; then
+		rm -rf ${start_edm}
+	fi
+	
+	### Check for StartEDM file presence
+	if [ ! -f ${start_edm} ]; then
+		if [ "$(configurePlatformStateGetStatus startEDM)" == "Completed" ]; then
+			platformVersion="$(configurePlatformStateGetVersion startEDM)"
+			echo "installed_edm_version=$platformVersion" > ${start_edm}
+		fi
+	fi
+	echoLog "INFO" "Initialize - startEDM - Completed" "Jobs Summary" | tee -a $log_all_jobs_summary
+
+	### Finalize
+	computeElapsedTime ${jobsInitializeStartTime}
+	echoLog "INFO" "Initialize - Folders - Completed - ${elapsedTimeTaken}" "Jobs Summary" | tee -a $log_all_jobs_summary
+}

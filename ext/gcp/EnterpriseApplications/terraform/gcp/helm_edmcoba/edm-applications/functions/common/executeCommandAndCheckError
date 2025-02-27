@@ -1,0 +1,55 @@
+### Execute Command and check error
+function executeCommandAndCheckError()
+{
+	### Input variables
+	executeCommand="$1"
+	executeCommandFunction="$2"
+	executeCommandMessage="$3"
+	executeCommandLogFile="$4"
+	executeCommandErrorFile="$5"
+	executeCommandWithoutExit="$6"
+	
+	### Start of Process
+	executeCommandAndCheckErrorStartTime=$(date +%s)
+	
+	### Execute Command
+	eval "${executeCommand}"
+
+	### Check Error
+	executeCommandErrorFile=`echo ${!executeCommandErrorFile}`
+	executeCommandAndCheckErrorFound="False"
+	touch "${executeCommandErrorFile}"
+	if ! grep -i "ERROR" "${executeCommandErrorFile}" | grep -v "_error" ; then
+		executeCommandErrorFileRename=`echo "${executeCommandErrorFile/.err/.log}"`
+		mv "${executeCommandErrorFile}" "${executeCommandErrorFileRename}" 2>/dev/null
+	fi
+	find "${executeCommandErrorFileRename}" -type f -empty -delete 2>/dev/null
+	find "${executeCommandErrorFile}" -type f -empty -delete 2>/dev/null
+
+	### Delete SQL files
+	#sqlFileDir="$(dirname ${executeCommandErrorFile})"
+	#rm -rf ${sqlFileDir}/*.sql
+
+    errorFiles=`find "${executeCommandErrorFile}" 2>/dev/null | wc -l`
+    if [ "$errorFiles" -gt "0" ]; then
+    	executeCommandAndCheckErrorFound="True"
+    fi
+	
+	### End of Process
+	computeElapsedTime ${executeCommandAndCheckErrorStartTime}
+	
+	### Action on Error
+	if [ "${executeCommandAndCheckErrorFound}" == "True" ]; then 
+		echoLog "ERROR" "${executeCommandMessage} - Failed    - ${elapsedTimeTaken}" "${executeCommandFunction}" | tee -a ${executeCommandLogFile}
+		if [ "${executeCommandWithoutExit}" == "true" ]; then
+			executeCommandAndCheckErrorStatus="Failed"
+		else
+			exit 1
+		fi 
+	else
+		echoLog "INFO" "${executeCommandMessage} - Completed - ${elapsedTimeTaken}" "${executeCommandFunction}" | tee -a ${executeCommandLogFile}
+		if [ "${executeCommandWithoutExit}" == "true" ]; then
+			executeCommandAndCheckErrorStatus="Completed"
+		fi
+	fi 
+}

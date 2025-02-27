@@ -1,0 +1,45 @@
+### Basic, Annotations
+{{- $basic := include "basic" . | fromYaml }}
+{{- if $basic.basic.externalDns }}
+{{- if eq "aws" $basic.basic.cloud.option }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: external-dns
+spec:
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: external-dns
+  template:
+    metadata:
+      labels:
+        app: external-dns
+    spec:
+      {{- with $basic.basic.cluster.node }}
+      {{ toYaml . | nindent 6 }}
+      {{- end }}
+      serviceAccountName: {{ $basic.basic.environment }}-external-dns
+      containers:
+      - name: external-dns
+        image: registry.k8s.io/external-dns/external-dns:v0.14.2
+        args:
+        - --log-format=text
+        - --source=service
+        - --source=ingress
+        - --provider=aws
+        - --domain-filter={{ $.Values.ingresses.lb.hostedZoneName }}
+        - --policy=upsert-only # would prevent ExternalDNS from deleting any records, omit to enable full synchronization
+        - --aws-prefer-cname
+        {{- if eq $.Values.ingresses.lb.scheme "internal" }}
+        - --aws-zone-type=private # only look at public hosted zones (valid values are public, private or no value for both)
+        {{- else }}
+        - --aws-zone-type=public # only look at public hosted zones (valid values are public, private or no value for both)
+        {{- end }}
+        - --registry=noop
+        - --txt-owner-id={{ $.Values.ingresses.lb.hostedZoneId }}
+      securityContext:
+        fsGroup: 65534 # For ExternalDNS to be able to read Kubernetes and AWS token files
+{{- end }}    
+{{- end }}

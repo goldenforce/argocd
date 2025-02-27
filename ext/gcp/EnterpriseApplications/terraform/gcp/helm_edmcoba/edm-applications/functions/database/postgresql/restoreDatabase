@@ -1,0 +1,120 @@
+### Restore Database
+function restoreDatabase()
+{
+	### Initialize
+	initializeDatabase
+
+	## Set directories/files
+	now=`date -u '+%Y%m%d_%H%M'`
+	restoreDatabaseStartTime=$(date +%s)
+	restoreDatabaseLogFolder="/${mount_home}/logs/DatabaseOperations/restoreDatabase/${now}"
+	restoreDatabaseLogFile="${restoreDatabaseLogFolder}/restoreDatabase.log"
+	restoreDatabaseWorkFolder="${restoreDatabaseLogFolder}/work"
+	restoreDatabaseBucketLogFileError="${restoreDatabaseLogFolder}/restoreDatabase-bucket.err"
+
+	### Create folders
+	rm -rf /${mount_home}/${DatabaseRestore_StoragePath}
+	rm -rf ${restoreDatabaseLogFolder} 
+	mkdir -p /${mount_home}/${DatabaseRestore_StoragePath} ${restoreDatabaseLogFolder} ${restoreDatabaseWorkFolder}
+
+	### Check if Database exists
+	checkDatabaseExists
+	if [ "${databaseExists}" == "1" ]; then
+		echoLog "ERROR" "Database - ${Database_Name} exists" "Restore Database" | tee -a ${restoreDatabaseLogFile}
+		exit 1
+	fi
+
+	### Copy from mount
+	executeCommandAndCheckError "copyFromBucketToMount ${restoreDatabaseBucketLogFileError}" "Restore Database" "Copy From - Bucket" "${restoreDatabaseLogFile}" "restoreDatabaseBucketLogFileError"
+
+	### Create Database
+	createDatabase ${restoreDatabaseLogFile} ${restoreDatabaseWorkFolder}
+	if [ "${createDatabaseStatus}" == "Failed" ]; then
+		exit 1
+	fi
+
+	### Read Export details from backup.config file
+	backupProperties=/${mount_home}/${DatabaseRestore_StoragePath}/backup.config
+	backupPropertiesDetails=$(cat ${backupProperties})
+	
+	### Create existing users for backup
+	for backupPropertiesDetail in ${backupPropertiesDetails}
+	do
+		sourceReferenceUser=`echo ${backupPropertiesDetail} | cut -d ":" -f 1`
+		backupUser=`echo ${backupPropertiesDetail} | cut -d ":" -f 2`
+		
+		### Create User based on backup file
+		executeCommandAndCheckError "createDatabaseRole ${backupUser} ${backupUser} ${restoreDatabaseWorkFolder} ${DatabaseTablespace}" "Restore Database" "User Create - ${backupUser}" "${restoreDatabaseLogFile}" "createRoleSQLError"
+	done
+	
+	### Restore backup from files	
+	for backupPropertiesDetail in ${backupPropertiesDetails}
+	do
+		sourceReferenceUser=`echo ${backupPropertiesDetail} | cut -d ":" -f 1` &&
+		backupUser=`echo ${backupPropertiesDetail} | cut -d ":" -f 2` &&
+		backupFile=`echo ${backupPropertiesDetail} | cut -d ":" -f 3` &&
+		backupFile="/${mount_home}/${DatabaseRestore_StoragePath}/${backupFile}" &&
+		restoreFileSQLError=${restoreDatabaseWorkFolder}/restore-${backupUser}.err &&
+		
+		### Restore Schema &&
+		executeCommand="export PGPASSWORD=${backupUser}; " &&
+		executeCommand+="psql \"${SSL_Argument} host=${Database_Host} port=${Database_Port} user=${backupUser} dbname=${Database_Name}\" -f ${backupFile} > /dev/null 2>${restoreFileSQLError} " &&
+		executeCommandAndCheckError "${executeCommand}" "Restore Database" "Processing File - ${backupFile}" "${restoreDatabaseLogFile}" "restoreFileSQLError" &
+	done
+	wait
+
+	### Create App user, Realign schemas, Create Role Privilege, Vacuum Analyze
+	for backupPropertiesDetail in ${backupPropertiesDetails}
+	do
+		sourceReferenceUser=`echo ${backupPropertiesDetail} | cut -d ":" -f 1`
+		backupUser=`echo ${backupPropertiesDetail} | cut -d ":" -f 2`
+
+		### Get Schema Details  
+		getDatabaseSchemaDetails ${sourceReferenceUser} 
+
+		### Create User (Owner)
+		executeCommandAndCheckError "createDatabaseRole ${gemSchemaOwner} ${gemSchemaOwner} ${restoreDatabaseWorkFolder} ${DatabaseTablespace}" "Restore Database" "User Create - ${gemSchemaOwner}" "${restoreDatabaseLogFile}" "createRoleSQLError"
+
+		### Create User (User) 
+		executeCommandAndCheckError "createDatabaseRole ${gemSchemaUser} ${gemSchemaUser} ${restoreDatabaseWorkFolder} ${DatabaseTablespace}" "Restore Database" "User Create - ${gemSchemaUser}" "${restoreDatabaseLogFile}" "createRoleSQLError"
+
+		### Realign User
+		executeCommandAndCheckError "realignDatabaseUser ${backupUser} ${gemSchemaOwner} ${restoreDatabaseWorkFolder}" "Restore Database" "User Realign - ${backupUser}" "${restoreDatabaseLogFile}" "realignDatabaseUserSQLError"
+
+		### Create Role Privilege (Owner)
+		executeCommandAndCheckError "createDatabaseRolePrivileges ${gemSchemaOwner} ${gemSchemaOwner} ${restoreDatabaseWorkFolder} ${DatabaseTablespace}" "Restore Database" "Role Privilege - ${gemSchemaOwner}" "${restoreDatabaseLogFile}" "createDatabaseRolePrivilegesSQLError"
+
+		### Create Role Privilege (User)
+		executeCommandAndCheckError "createDatabaseRolePrivileges ${gemSchemaUser} ${gemSchemaOwner} ${restoreDatabaseWorkFolder} ${DatabaseTablespace}" "Restore Database" "Role Privilege - ${gemSchemaUser}" "${restoreDatabaseLogFile}" "createDatabaseRolePrivilegesSQLError"
+
+		### Create User Password (Owner)
+		executeCommandAndCheckError "passwordDatabaseUser ${gemSchemaOwner} ${gemSchemaOwnerPassword} ${restoreDatabaseWorkFolder}" "Restore Database" "User Password - ${gemSchemaOwner}" "${restoreDatabaseLogFile}" "passwordDatabaseUserSQLError"
+
+		### Create User Password (User)
+		executeCommandAndCheckError "passwordDatabaseUser ${gemSchemaUser} ${gemSchemaUserPassword} ${restoreDatabaseWorkFolder}" "Restore Database" "User Password - ${gemSchemaUser}" "${restoreDatabaseLogFile}" "passwordDatabaseUserSQLError"
+
+		### Reorg Database
+		executeCommandAndCheckError "reorgDatabase ${gemSchemaOwner} ${gemSchemaOwnerPassword} \"va\" ${restoreDatabaseWorkFolder}" "Restore Database" "Schema Reorg - ${gemSchemaOwner}" "${restoreDatabaseLogFile}" "reorgDatabaseSQLError"
+
+		### Role Drop
+		if ! [ -f "${restoreDatabaseWorkFolder}/createRole-${backupUser}.log" ]; then
+			executeCommandAndCheckError "dropDatabaseRole ${backupUser} ${restoreDatabaseWorkFolder}" "Restore Database" "Role Drop - ${backupUser}" "${restoreDatabaseLogFile}" "dropDatabaseRoleSQLError"
+		fi 
+	done
+	### Update Edm Environment
+	executeCommandAndCheckError "updateDatabaseEdmEnvironment ${restoreDatabaseWorkFolder}" "Restore Database" "Edm Env Update - ${edm_environment}" "${restoreDatabaseLogFile}" "updateDatabaseEdmEnvironmentSQLError"
+	computeElapsedTime ${restoreDatabaseStartTime}
+
+	### Assign Audit Role To GC
+	executeCommandAndCheckError "assignAUDITRoleToGC ${restoreDatabaseWorkFolder}" "Restore Database" "Assign Role - ${GEMSchemaOwner_AUDIT}" "${restoreDatabaseLogFile}" "assignAUDITRoleToGCSQLError" "true"
+
+	### Assign Audit Triggers
+	executeCommandAndCheckError "assignAUDITTriggers ${restoreDatabaseWorkFolder}" "Restore Database" "Assign Audit Triggers - ${GEMSchemaOwner_AUDIT}" "${restoreDatabaseLogFile}" "assignAUDITTriggersSQLError" "true"
+
+	### Update Keycloak Platform
+	configurePlatformStateSetTask "configureKeycloak" "${edm_version}" "Failed"
+	
+	### Finalize
+	#rm -rf ${restoreDatabaseWorkFolder}/*.sql
+	echoLog "INFO" "Database - ${Database_Name} - Completed - ${elapsedTimeTaken}" "Restore Database" | tee -a ${restoreDatabaseLogFile}
+}

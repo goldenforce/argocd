@@ -1,0 +1,42 @@
+### Create Database
+function createDatabase()
+{
+	### Initialize
+	initializeDatabase
+
+	mainLogFile="$1"
+	createDatabaseWorkFolder="$2"
+	createDatabaseSqlFile="${createDatabaseWorkFolder}/createDatabase.sql"
+	createDatabaseLogFileError="${createDatabaseWorkFolder}/createDatabase.err"
+	mkdir -p ${createDatabaseWorkFolder}
+	
+	### Create Database SQL
+	cat > ${createDatabaseSqlFile} <<- EOM
+		CREATE DATABASE ${Database_Name} WITH
+			OWNER=${Database_Owner_User}
+			ENCODING 'UTF8'
+			LC_COLLATE 'C'
+			LC_CTYPE 'en_US.utf8'
+			TEMPLATE 'template0'
+			CONNECTION_LIMIT -1;
+	EOM
+	
+	### Create Database Execute
+	executeCommand="export PGPASSWORD=${Database_Owner_Password}; "
+	executeCommand+="psql \"${SSL_Argument} host=${Database_Host} port=${Database_Port} dbname=postgres user=${Database_Owner_User}\" -f ${createDatabaseSqlFile} > ${createDatabaseLogFileError} 2>>${createDatabaseLogFileError}"
+	executeCommandAndCheckError "${executeCommand}" "Create Database" "Database Name - ${Database_Name}" ${mainLogFile} "createDatabaseLogFileError" "true"
+
+	createDatabaseStatus="Failed"
+	if [ "${executeCommandAndCheckErrorStatus}" == "Completed" ]; then
+		createDatabaseStatus="Completed"
+	fi
+
+	### Create Partition
+	if [ "${edm_partition}" == "true" ]; then
+		executeCommandAndCheckError "createDatabasePartition ${createDatabaseWorkFolder}" "Create Database" "Database Partition - ${Database_Name}" ${mainLogFile} "createDatabasePartitionSQLError"
+		createDatabaseStatus="Failed"
+		if [ "${executeCommandAndCheckErrorStatus}" == "Completed" ]; then
+			createDatabaseStatus="Completed"
+		fi
+	fi
+}

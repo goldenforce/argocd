@@ -1,0 +1,39 @@
+### Common Executor
+function dbQueryExecute()
+{
+	### Initialize
+	dbQueryExecuteName=$1
+	dbQueryExecuteSQL=$2
+	dbQueryExecuteWorkFolder=$3
+	dbQueryExecuteStatus="Failed"
+	dbQueryExecuteLogFile="${dbQueryExecuteWorkFolder}/${dbQueryExecuteName}.log"
+
+	## JDBC Url
+	initializeDatabase
+	JDBC_Url="jdbc:${database_connection_provider}${Database_Host}:${Database_Port}/${Database_Service}?autosave=conservative${SSL_Argument_JDBC}"
+
+	### Execute
+	cd /ext/app/dbTools
+	jarName=`ls /ext/app/dbTools/${database_connection_jar}*.jar`
+	java -cp jdbcquery.jar:${jarName}  Main ${JDBC_Url} ${GEMSchemaUser_GC} ${GEMSchemaUserPassword_GC} "${dbQueryExecuteSQL}" > ${dbQueryExecuteLogFile} 
+
+	### Check Error
+	queryResultErrorCount=0
+	queryResultNoResultStatus=`grep -i "No results were returned by the query" "${dbQueryExecuteLogFile}" | wc -l`
+	if [[ ${queryResultNoResultStatus} -gt 0 ]]; then
+		queryResultNoResultStatus=0
+	fi
+	queryResultExecutionFailedStatus=`grep -i "Query execution failed" "${dbQueryExecuteLogFile}" | wc -l`
+	if [[ ${queryResultNoResultStatus} -eq 0 ]]; then
+		queryResultExecutionFailedStatus=0
+	fi
+	queryResultErrorStatus=`grep -i "ERROR" "${dbQueryExecuteLogFile}" | wc -l`
+	queryResultErrorCount=$((${queryResultNoResultStatus} + ${queryResultExecutionFailedStatus} + ${queryResultErrorStatus}))		
+	
+	if [[ ! ${queryResultErrorCount} -eq 0 ]]; then
+		dbQueryExecuteLogFileErrorRename=`echo "${dbQueryExecuteLogFile/.log/.err}"`
+		mv "${dbQueryExecuteLogFile}" "${dbQueryExecuteLogFileErrorRename}" 2>/dev/null
+	else
+		dbQueryExecuteStatus="Completed"
+	fi
+}

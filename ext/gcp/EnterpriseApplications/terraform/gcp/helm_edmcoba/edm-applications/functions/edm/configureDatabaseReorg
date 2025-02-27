@@ -1,0 +1,49 @@
+## Database Reorg
+configureDatabaseReorg()
+{
+	### Initialize
+	configureDatabaseReorgOptions="$1"
+	configureDatabaseReorgWorkFolder="$2"
+	configureDatabaseReorgLogFile="$3"
+	configureDatabaseReorgStatus="Failed"
+	configurePlatformStateSetTaskStatus="Failed"
+	now=`date -u '+%Y%m%d_%H%M'`
+	configureDatabaseReorgStartTime=$(date +%s)
+	echoLog "INFO" "Job - $(hostname) - Image - Repository - ${application_image}" "Database Reorg" "True" | tee -a ${configureDatabaseReorgLogFile}
+	echoLog "INFO" "All - Reorg - Begin" "Database Reorg" | tee -a ${configureDatabaseReorgLogFile}
+
+	initializeDatabase
+
+	## Get All schemas 
+	failedCount=0
+	for schema in $databaseSchemaDetails 
+	do
+		getDatabaseSchemaOwnerUsersDetails ${schema}
+
+		### Reorg Database
+		reorgDatabase ${gemSchemaOwner} ${gemSchemaOwnerPassword} ${configureDatabaseReorgOptions} ${configureDatabaseReorgWorkFolder}
+		configureDatabaseReorgExecutedLogFile="${configureDatabaseReorgWorkFolder}/reorgDatabase-${gemSchemaOwner}.err"
+		
+		queryResultErrorCount=`grep -i "ERROR" "${configureDatabaseReorgExecutedLogFile}" | grep -v "_error" | wc -l`
+		if [[ ! ${queryResultErrorCount} -eq 0 ]]; then
+			((failedCount += 1))
+			echoLog "ERROR" "Reorg - ${gemSchemaOwner} - Failed" "Database Reorg" | tee -a ${configureDatabaseReorgLogFile}
+		else
+			configureDatabaseReorgLogFileErrorRename=`echo "${configureDatabaseReorgExecutedLogFile/.err/.log}"`
+			mv "${configureDatabaseReorgExecutedLogFile}" "${configureDatabaseReorgLogFileErrorRename}" 2>/dev/null
+			echoLog "INFO" "Reorg - ${gemSchemaOwner} - Completed" "Database Reorg" | tee -a ${configureDatabaseReorgLogFile}
+		fi
+	done
+
+	## Final
+	computeElapsedTime ${configureDatabaseReorgStartTime}
+	if [[ ${failedCount} -eq 0 ]]; then
+		configureDatabaseReorgStatus="Completed"
+	fi
+	
+	if [ "$configureDatabaseReorgStatus" == "Failed" ]; then
+		echoLog "ERROR" "All - Reorg - Failed" "Database Reorg" | tee -a ${configureDatabaseReorgLogFile}
+	else
+		echoLog "INFO" "All - Reorg - Completed" "Database Reorg" | tee -a ${configureDatabaseReorgLogFile}
+	fi
+}

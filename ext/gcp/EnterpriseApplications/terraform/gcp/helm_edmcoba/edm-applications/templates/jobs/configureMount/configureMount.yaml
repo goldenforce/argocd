@@ -1,0 +1,154 @@
+### Basic, Annotations
+{{- $basic := include "basic" . | fromYaml }}
+### Init container
+{{- $initContainer := include "initContainer" . | fromYaml }}
+### Volume Mounts
+{{- $volumeMounts := include "volumeMounts" . | fromYaml }}
+### Volumes
+{{- $volumes := include "volumes" . | fromYaml }}
+### Jobs
+{{- $jobs := include "jobs" . | fromYaml }}
+### Custom
+{{- $custom := include "custom" . | fromYaml }}
+###
+{{- if $basic.basic.processJobs }}
+###
+{{- range $k, $v := $jobs.jobs -}}
+{{- if and (eq $v.type "configureMount") $v.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ lower $k }}
+  annotations:
+    {{- with $v.annotations }}
+    {{ toYaml . | nindent 4 }}
+    {{- end }}
+  labels:
+    {{- with $v.labels }}
+    {{ toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  template:
+    metadata:
+      name: {{ lower $k }}
+      labels:
+        {{- with $v.labels }}
+        {{ toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      securityContext:
+        runAsUser: {{ $v.securityContext.runAsUser }}
+        runAsGroup: {{ $v.securityContext.runAsGroup }}
+        fsGroup: {{ $v.securityContext.fsGroup }}
+        fsGroupChangePolicy: {{ $v.securityContext.fsGroupChangePolicy }}
+      automountServiceAccountToken: true
+      serviceAccountName: {{ $basic.basic.cluster.serviceAccountName }}
+      ### Image Pull Secret
+      {{- if $basic.basic.imagePullSecretsEnabled }}
+      imagePullSecrets:
+        - name: {{ $basic.basic.imagePullSecretsName }}
+      {{- end }}
+      ### Node Affinity
+      {{- with $basic.basic.cluster.node }}
+      {{ toYaml . | nindent 6 }}
+      {{- end }}
+      ### Init container
+      {{- with $initContainer }}
+      {{- with index . $k }}
+      {{ toYaml . | nindent 6 }}
+      {{- end }}
+      {{- end }}
+      ### Init container - Custom
+      {{- if $basic.basic.customHelm }}
+      {{- with $custom.custom.initContainers }}
+      {{ toYaml . | nindent 6 }}
+      {{- end }}
+      {{- end }}
+      containers:
+      - name: {{ lower $k }}
+        image: {{ $v.image }}
+        imagePullPolicy: {{ $basic.basic.imagePullPolicy }}
+        env:
+        - name: application_image
+          value: {{ $v.image | quote }}
+        {{- if $basic.basic.customHelm }}
+        {{- with $custom.custom.env }}
+        {{ toYaml . | nindent 8 }}
+        {{- end }}
+        {{- end }}
+        envFrom:
+        - configMapRef:
+            name: edm-applications-config-map
+            optional: false
+        command: ["/bin/sh", "-c"]
+        args:
+        - |
+          ### Load Scripts
+          . /etc/edm/functions/edm_functions.sh
+
+          ## Run infinite
+          runInfinite="False"
+
+          ## Configure Mount
+          echoLog "INFO" "Mount - Copy to Archive - Started" "Jobs Summary" | tee -a $log_all_jobs_summary
+          now=`date -u '+%Y%m%d_%H%M'`
+          configureMountStartTime=$(date +%s)
+          ## Configure Mount
+          configureMount 
+          computeElapsedTime ${configureMountStartTime}
+          if [ "${configureMountStatus}" == "Completed" ]; then
+             echoLog "INFO" "Mount - Copy to Archive - Completed - ${elapsedTimeTaken}" "Jobs Summary" | tee -a $log_all_jobs_summary
+          else
+             echoLog "ERROR" "Mount - Copy to Archive - Failed - ${elapsedTimeTaken}" "Jobs Summary" | tee -a $log_all_jobs_summary
+             exit 1
+          fi
+          ## Platform Status
+          if [ ! "${configurePlatformStateSetTaskStatus}" == "Completed" ]; then
+             echoLog "ERROR" "Platform Status - Copy to Mount Arc. - Failed - ${elapsedTimeTaken}" "Jobs Summary" | tee -a $log_all_jobs_summary
+          fi
+
+          ## Check if to run infinitely
+          if [ "${runInfinite}" == "True" ]; then
+             while true;
+             do
+                tail > /dev/null
+             done
+          fi
+        resources:
+          limits:
+            cpu: {{ $v.resources.limits.cpu }}
+            memory: {{ $v.resources.limits.memory }}
+          requests:
+            cpu: {{ $v.resources.requests.cpu }}
+            memory: {{ $v.resources.requests.memory }}
+        ### Volume Mounts
+        {{- with $volumeMounts }}
+        {{- with index . $k }}
+        {{ toYaml . | nindent 8 }}
+        {{- end }}
+        {{- end }}
+        ### Volume Mounts - Custom
+        {{- if $basic.basic.customHelm }}
+        {{- with $custom.custom.volumeMounts }}
+        {{ toYaml . | nindent 8 }}
+        {{- end }}
+        {{- end }}
+      ### Volumes
+      {{- with $volumes }}
+      {{- with index . $k }}
+      {{ toYaml . | nindent 6 }}
+      {{- end }}
+      {{- end }}
+      ### Volumes - Custom
+      {{- if $basic.basic.customHelm }}
+      {{- with $custom.custom.volumes }}
+      {{ toYaml . | nindent 6 }}
+      {{- end }}
+      {{- end }}
+      restartPolicy: Never
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 0
+{{- end }}
+{{- end }}
+{{- end }}
+---

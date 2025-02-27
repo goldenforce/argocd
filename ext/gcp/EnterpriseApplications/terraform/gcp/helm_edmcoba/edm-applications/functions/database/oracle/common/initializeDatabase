@@ -1,0 +1,28 @@
+### Initialize Database Utilities
+function initializeDatabase()
+{
+	### database.properties
+	Database_Owner_User=${DatabaseOwner_User}
+	Database_Owner_Password=${DatabaseOwner_Password}
+	Database_Name=${DatabaseName_Schema_GC}
+	Database_Host=${DatabaseHost_Schema_GC}
+	Database_Port=${DatabasePort_Schema_GC}
+	Database_Service=${DatabaseService_Schema_GC}
+	
+	### Schema Filter
+	SchemaOwner_Filter="${SchemaOwner_GC} ${SchemaOwner_VDDB} ${SchemaOwner_AUDIT} ${SchemaOwner_INSTREP} ${SchemaOwner_KEYCLOAK} ${SchemaOwner_JOBSCHEDULER} ${SchemaOwner_INSIGHT} ${SchemaOwner_PLATFORMSTATE}"
+	SchemaTypes="GoldenCopy VendorDetail Audit Repository KeyCloak Jobscheduler Insight Platformstate"
+	#SchemaOwner_Filter="'${SchemaOwner_AUDIT}', '${SchemaOwner_KEYCLOAK}', '${SchemaOwner_JOBSCHEDULER}', '${SchemaOwner_INSIGHT}'"
+	
+	### Execution
+	export_with_tablespaces=true
+
+	### Create TNSNames ora
+	if [ "$DatabaseType" == "oracle" ]; then
+		createTNSNamesOra
+	fi
+	### Create ODBC ini
+	if [ "$DatabaseType" == "postgresql" ]; then
+		createODBCIni
+	fi
+}

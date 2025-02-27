@@ -1,0 +1,54 @@
+### Basic, Annotations
+{{- $basic := include "basic" . | fromYaml }}
+{{- $annotationsLabels := include "annotationsLabels" . | fromYaml }}
+### Applications
+{{- $applications := include "applications" . | fromYaml }}
+###
+{{- if .Values.cluster.hpa.create }}
+{{- range $k, $v := $applications.applications -}}
+{{- if or (eq $v.type "Non-Orchestrator") (eq $v.type "Orchestrator") }}
+apiVersion: {{ $basic.basic.cloud.hpaApiVersion }}
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ lower $k }}
+  annotations:
+    {{- with $annotationsLabels.common.annotations }}
+    {{ toYaml . | nindent 4 }}
+    {{- end }}
+  labels:
+    {{- with $annotationsLabels.common.labels }}
+    {{ toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ lower $k }}
+  minReplicas: {{ $v.resources.hpa.minReplicas }}
+  maxReplicas: {{ $v.resources.hpa.maxReplicas }}
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: {{ $v.resources.hpa.averageUtilization }}
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: {{ $v.resources.hpa.scaleUpStabilizationWindowSeconds }}
+      policies:
+      - type: Pods
+        value: 1
+        periodSeconds: {{ $v.resources.hpa.scaleUpPeriodSeconds }}
+      selectPolicy: Max
+    scaleDown:
+      stabilizationWindowSeconds: {{ $v.resources.hpa.scaleDownStabilizationWindowSeconds }}
+      policies:
+      - type: Pods
+        value: 1
+        periodSeconds: {{ $v.resources.hpa.scaleDownPeriodSeconds }}
+      selectPolicy: Min
+---
+{{- end }}
+{{- end }}
+{{- end }}
