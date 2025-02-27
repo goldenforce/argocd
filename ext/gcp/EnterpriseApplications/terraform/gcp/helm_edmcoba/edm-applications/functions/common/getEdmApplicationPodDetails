@@ -1,8 +1,0 @@
-### Get EDM Application Pod Details
-function getEdmApplicationPodDetails()
-{
-	kubeToken=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
-	edmApplicationApiEndPoint="https://${KUBERNETES_SERVICE_HOST}:${KUBERNETES_PORT_443_TCP_PORT}/api/v1/namespaces/${KUBERNETES_NAMESPACE}/pods?labelSelector=edm_applications=true"
-	edmApplicationApiJson=`curl -sSk -H "Authorization: Bearer $kubeToken" ${edmApplicationApiEndPoint}`  
-	echo $edmApplicationApiJson | jq -r '.items[] | "\(.metadata.labels.app),\(.metadata.name),\(.status.podIP),\(.spec.containers[].ports[].containerPort)"'
-}

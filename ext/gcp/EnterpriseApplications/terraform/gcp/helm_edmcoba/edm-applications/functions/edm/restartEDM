@@ -1,8 +1,0 @@
-### Restart EDM
-restartEDM()
-{
-	touch ${start_edm}
-	mv ${start_edm} ${start_edm}.waiting
-	sleep 90
-	mv ${start_edm}.waiting ${start_edm}
-}

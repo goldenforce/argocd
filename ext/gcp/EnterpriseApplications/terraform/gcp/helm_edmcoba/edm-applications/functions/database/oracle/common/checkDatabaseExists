@@ -1,9 +1,0 @@
-### Check if Database exists
-function checkDatabaseExists()
-{
-	### Initialize
-	initializeDatabase
-	
-	### Check Database exists SQL
-	databaseExists=0
-}

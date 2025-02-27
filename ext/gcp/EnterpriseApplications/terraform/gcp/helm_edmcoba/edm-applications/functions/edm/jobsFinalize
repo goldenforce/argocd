@@ -1,8 +1,0 @@
-### Jobs Finalize
-function jobsFinalize()
-{
-	## Copy logs to archive
-	mkdir -p /${mount_home}/logs/Archive/${edm_execution_date}
-	cp -r /${mount_home}/logs/Initialize/* /${logs_home}/logs/Archive/${edm_execution_date}
-	rm -rf /${mount_home}/logs/Archive/${edm_execution_date}/servers
-}
