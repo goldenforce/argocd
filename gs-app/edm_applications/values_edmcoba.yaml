@@ -657,21 +657,22 @@ ingresses:
 
 ##### Begin - Jobs configurations
 jobs:
-  databaseSchemas:
-    create: true
-  applications:
-    gem:
-      enabled: true
-    domains:
-      enabled: true
-    elasticsearchIndex:
-      enabled: true
-    edma:
-      enabled: true
-    reorgDatabase: 
-      enabled: true
-      ### Reorg execute - valid options ["None", "va", "vf", "rt", "va,rt"] 
-      execute: "None"
+  jobs:
+    databaseSchemas:
+      create: true
+    applications:
+      gem:
+        enabled: false
+      domains:
+        enabled: false
+      elasticsearchIndex:
+        enabled: false
+      edma:
+        enabled: false
+      reorgDatabase: 
+        enabled: false
+        ### Reorg execute - valid options ["None", "va", "vf", "rt", "va,rt"] 
+        execute: "None"
   cron:
     cleanup:
       enabled: true
