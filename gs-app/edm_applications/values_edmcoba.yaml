@@ -656,23 +656,22 @@ ingresses:
 ##### End - Ingress configurations
 
 ##### Begin - Jobs configurations
-jobs:
-  jobs:
-    databaseSchemas:
-      create: true
-    applications:
-      gem:
-        enabled: false
-      domains:
-        enabled: false
-      elasticsearchIndex:
-        enabled: false
-      edma:
-        enabled: false
-      reorgDatabase: 
-        enabled: false
-        ### Reorg execute - valid options ["None", "va", "vf", "rt", "va,rt"] 
-        execute: "None"
+jobs:  
+  databaseSchemas:
+    create: true
+  applications:
+    gem:
+      enabled: false
+    domains:
+      enabled: false
+    elasticsearchIndex:
+      enabled: false
+    edma:
+      enabled: false
+    reorgDatabase: 
+      enabled: false
+      ### Reorg execute - valid options ["None", "va", "vf", "rt", "va,rt"] 
+      execute: "None"
   cron:
     cleanup:
       enabled: true
