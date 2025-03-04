@@ -661,15 +661,15 @@ jobs:
     create: true
   applications:
     gem:
-      enabled: false
+      enabled: true
     domains:
-      enabled: false
+      enabled: true
     elasticsearchIndex:
-      enabled: false
+      enabled: true
     edma:
-      enabled: false
+      enabled: true
     reorgDatabase: 
-      enabled: false
+      enabled: true
       ### Reorg execute - valid options ["None", "va", "vf", "rt", "va,rt"] 
       execute: "None"
   cron:
