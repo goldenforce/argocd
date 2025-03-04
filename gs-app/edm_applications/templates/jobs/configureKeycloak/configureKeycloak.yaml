@@ -156,7 +156,7 @@ spec:
       {{- end }}
       restartPolicy: Never
   backoffLimit: 0
-  ttlSecondsAfterFinished: 0
+  ttlSecondsAfterFinished: 5
 {{- end }}
 {{- end }}
 {{- end }}

@@ -134,7 +134,7 @@ spec:
       restartPolicy: Never
       activeDeadlineSeconds: 72000
   backoffLimit: 0
-  ttlSecondsAfterFinished: 0
+  ttlSecondsAfterFinished: 5
 {{- end }}
 {{- end }}
 ---
