@@ -13,8 +13,8 @@ common:
   ### labels - labels will be applied across all resource                     
   labels: {}
   ### annotations   - annotations will be applied across all resource
-  annotations:
-     argocd.argoproj.io/sync-options: ServerSideApply=true
+  annotations: {}
+###     argocd.argoproj.io/sync-options: ServerSideApply=true
 ##### End - Common configurations 
 
 ##### Begin - Cluster configurations
