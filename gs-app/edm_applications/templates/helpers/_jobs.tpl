@@ -17,7 +17,7 @@ jobs:
       "helm.sh/hook": post-install, post-upgrade
       "helm.sh/hook-weight": "101"
       "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded,hook-failed
-	  "argocd.argoproj.io/hook" : "PreSync"
+      "argocd.argoproj.io/hook" : "PreSync"
     labels:
       {{- with $annotationsLabels.common.labels }}
       {{ toYaml . | nindent 6 }}
@@ -51,7 +51,7 @@ jobs:
       "helm.sh/hook": post-install, post-upgrade
       "helm.sh/hook-weight": "102"
       "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded,hook-failed
-	  "argocd.argoproj.io/hook" : "PreSync"
+      "argocd.argoproj.io/hook" : "PreSync"
     labels:
       {{- with $annotationsLabels.common.labels }}
       {{ toYaml . | nindent 6 }}
@@ -82,7 +82,7 @@ jobs:
       "helm.sh/hook": post-install, post-upgrade
       "helm.sh/hook-weight": "103"
       "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded,hook-failed
-	  "argocd.argoproj.io/hook" : "PreSync"
+      "argocd.argoproj.io/hook" : "PreSync"
     labels:
       {{- with $annotationsLabels.common.labels }}
       {{ toYaml . | nindent 6 }}
@@ -116,7 +116,7 @@ jobs:
       "helm.sh/hook": post-install, post-upgrade
       "helm.sh/hook-weight": "104"
       "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded,hook-failed
-	  "argocd.argoproj.io/hook" : "PreSync"
+      "argocd.argoproj.io/hook" : "PreSync"
     labels:
       {{- with $annotationsLabels.common.labels }}
       {{ toYaml . | nindent 6 }}
@@ -149,7 +149,7 @@ jobs:
       "helm.sh/hook": post-install, post-upgrade
       "helm.sh/hook-weight": "999"
       "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded,hook-failed
-	  "argocd.argoproj.io/hook" : "PreSync"
+      "argocd.argoproj.io/hook" : "PreSync"
     labels:
       {{- with $annotationsLabels.common.labels }}
       {{ toYaml . | nindent 6 }}
@@ -187,7 +187,7 @@ jobs:
       "helm.sh/hook": post-install, post-upgrade
       "helm.sh/hook-weight": "100"
       "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded,hook-failed
-	  "argocd.argoproj.io/hook" : "PreSync"
+      "argocd.argoproj.io/hook" : "PreSync"
     labels:
       {{- with $annotationsLabels.common.labels }}
       {{ toYaml . | nindent 6 }}
@@ -222,7 +222,7 @@ jobs:
       "helm.sh/hook": post-install, post-upgrade
       "helm.sh/hook-weight": "105"
       "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded,hook-failed
-	  "argocd.argoproj.io/hook" : "PreSync"
+      "argocd.argoproj.io/hook" : "PreSync"
     labels:
       {{- with $annotationsLabels.common.labels }}
       {{ toYaml . | nindent 6 }}
